@@ -1,4 +1,4 @@
-# Muse THINK to D365
+# THINK to D365
 
 Transform source CRM JSON into Dynamics 365 payloads, write the mapped output, and optionally push sanitized records to D365.
 
@@ -187,6 +187,6 @@ Run the full test suite with:
 python -m unittest discover -s tests
 ```
 
-## Keeping Secrets Out of Git
+## Contributing
 
 Do not commit your `.env` file. It contains credentials and tenant-specific settings.
