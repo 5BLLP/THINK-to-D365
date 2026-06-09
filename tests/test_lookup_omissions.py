@@ -12,6 +12,26 @@ from crm_json_converter.converter.mappings import get_table_mapping
 
 
 class LookupOmissionTests(unittest.TestCase):
+    def test_customer_customer_id_is_emitted_as_jh_thinkidnbr(self) -> None:
+        mapping = get_table_mapping("customer")
+        field_map = {field.source_column: field for field in mapping.fields}
+        errors: list[str] = []
+        sanitized = sanitize_record(
+            {
+                "customer_id": 94,
+                "company": "Example Company",
+            },
+            field_map,
+            1,
+            errors,
+        )
+
+        payload = build_d365_payload("customer", sanitized)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(payload["jh_thinkidnbr"], 94)
+        self.assertNotIn("jh_museid", payload)
+
     def test_payment_table_targets_entitlement(self) -> None:
         mapping = get_table_mapping("payment")
         self.assertEqual(mapping.target_entity, "jh_entitlement")
@@ -36,7 +56,7 @@ class LookupOmissionTests(unittest.TestCase):
         payload = build_d365_payload("payment", sanitized)
 
         self.assertEqual(errors, [])
-        self.assertEqual(payload["jh_accountid@odata.bind"], "/accounts(jh_museid='94')")
+        self.assertEqual(payload["jh_accountid@odata.bind"], "/accounts(jh_thinkidnbr=94)")
         self.assertEqual(payload["jh_orderid"], "19555989")
         self.assertEqual(payload["jh_name"], "19555989:1")
         self.assertEqual(payload["jh_sequence"], 1)

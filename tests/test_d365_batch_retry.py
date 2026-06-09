@@ -188,12 +188,12 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
         records = [
-            {"customer_id": "C001", "company": "First"},
+            {"customer_id": 1001, "company": "First"},
             {"customer_id": "", "company": "No Lookup"},
-            {"customer_id": "C002", "company": "Second"},
+            {"customer_id": 1002, "company": "Second"},
         ]
 
         with patch("crm_json_converter.d365.client.build_d365_payload") as build_payload:
@@ -221,9 +221,9 @@ class D365BatchRetryTests(unittest.TestCase):
             ],
         )
         self.assertEqual(logs, [
-            "[crm-json-transform] record 1: PATCH accounts by jh_museid=C001",
-            "[crm-json-transform] record 2: POST accounts by jh_museid=",
-            "[crm-json-transform] record 3: POST accounts by jh_museid=C002",
+            "[crm-json-transform] record 1: PATCH accounts by jh_thinkidnbr=1001",
+            "[crm-json-transform] record 2: POST accounts by jh_thinkidnbr=",
+            "[crm-json-transform] record 3: POST accounts by jh_thinkidnbr=1002",
         ])
         self.assertTrue(
             all(
@@ -290,12 +290,12 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
         records = [
-            {"customer_id": "C001", "company": "Old First"},
-            {"customer_id": "C002", "company": "Second"},
-            {"customer_id": "C001", "company": "New First"},
+            {"customer_id": 1001, "company": "Old First"},
+            {"customer_id": 1002, "company": "Second"},
+            {"customer_id": 1001, "company": "New First"},
         ]
 
         with patch("crm_json_converter.d365.client.build_d365_payload") as build_payload:
@@ -309,7 +309,7 @@ class D365BatchRetryTests(unittest.TestCase):
         self.assertEqual([row["record_index"] for row in client.batch.write_rows], [2, 3])  # type: ignore[attr-defined]
         self.assertEqual([row["payload"]["name"] for row in client.batch.write_rows], ["Second", "New First"])  # type: ignore[attr-defined]
         self.assertIn(
-            "[crm-json-transform] record 1: skipped duplicate jh_museid=C001 (replaced by record 3)",
+            "[crm-json-transform] record 1: skipped duplicate jh_thinkidnbr=1001 (replaced by record 3)",
             logs,
         )
         self.assertNotIn(1, [row["record_index"] for row in client.batch.write_rows])  # type: ignore[attr-defined]
@@ -536,8 +536,8 @@ class D365BatchRetryTests(unittest.TestCase):
             primary_id_field="jh_entitlementid",
         )
         records = [
-            {"customer_id": "ACCT-1", "orderhdr_id": "ENT-1", "order_item_seq": 1, "payment_amount": 10, "payment_date": "2026-06-03T00:00:00"},
-            {"customer_id": "ACCT-2", "orderhdr_id": "ENT-2", "order_item_seq": 2, "payment_amount": 20, "payment_date": "2026-06-03T00:00:00"},
+            {"customer_id": 1001, "orderhdr_id": "ENT-1", "order_item_seq": 1, "payment_amount": 10, "payment_date": "2026-06-03T00:00:00"},
+            {"customer_id": 1002, "orderhdr_id": "ENT-2", "order_item_seq": 2, "payment_amount": 20, "payment_date": "2026-06-03T00:00:00"},
         ]
 
         with patch("crm_json_converter.d365.client.build_d365_payload") as build_payload:
@@ -693,7 +693,7 @@ class D365BatchRetryTests(unittest.TestCase):
                     {
                         "record_index": 1,
                         "operation": "PATCH",
-                        "match_value": "C001",
+                        "match_value": 1001,
                         "outcome": "failure",
                         "status_code": 404,
                         "error": '{"error":{"code":"0x80060891","message":"A record with the specified key values does not exist in account entity"}}',
@@ -714,9 +714,9 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
-        records = [{"customer_id": "C001", "company": "First"}]
+        records = [{"customer_id": 1001, "company": "First"}]
 
         with patch("crm_json_converter.d365.client.build_d365_payload") as build_payload:
             build_payload.side_effect = lambda table_name, record, import_id=None: {
@@ -726,8 +726,8 @@ class D365BatchRetryTests(unittest.TestCase):
             }
             logs = client._upsert_table_records_batch("customer", table_config, records)
 
-        self.assertEqual(post_calls, [(1, {"customer_id": "C001", "name": "First", "import_id": "T20260529"})])
-        self.assertEqual(logs, ["[crm-json-transform] record 1: POST accounts by jh_museid=C001 (fallback)"])
+        self.assertEqual(post_calls, [(1, {"customer_id": 1001, "name": "First", "import_id": "T20260529"})])
+        self.assertEqual(logs, ["[crm-json-transform] record 1: POST accounts by jh_thinkidnbr=1001 (fallback)"])
         self.assertTrue(any(event.get("outcome") == "success" and event.get("operation") == "POST" for event in client.logger.events))
 
     def test_payment_lookup_fails_when_account_is_missing(self) -> None:
@@ -751,7 +751,7 @@ class D365BatchRetryTests(unittest.TestCase):
                 table_config=table_config,
                 record_index=1,
                 record={
-                    "customer_id": "ACCT-404",
+                    "customer_id": 404,
                     "orderhdr_id": "ENT-1",
                     "order_item_seq": 1,
                     "payment_amount": 10,
@@ -760,7 +760,7 @@ class D365BatchRetryTests(unittest.TestCase):
                 current_import_id="T20260529",
             )
 
-        self.assertIn("account with account_id=ACCT-404 does not exist", str(exc.exception))
+        self.assertIn("account with account_id=404 does not exist", str(exc.exception))
 
     def test_lookup_existing_ids_logs_once_per_chunk(self) -> None:
         multipart_body = (
@@ -772,7 +772,7 @@ class D365BatchRetryTests(unittest.TestCase):
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json\r\n"
             "\r\n"
-            '{"value":[{"accountid":"abc","jh_museid":"C001","jh_importid":"T20260529"}]}\r\n'
+            '{"value":[{"accountid":"abc","jh_thinkidnbr":1001,"jh_importid":"T20260529"}]}\r\n'
             "--batch_test\r\n"
             "Content-Type: application/http\r\n"
             "Content-Transfer-Encoding: binary\r\n"
@@ -819,11 +819,11 @@ class D365BatchRetryTests(unittest.TestCase):
             table_config=type(
                 "TableConfig",
                 (),
-                {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+                {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
             )(),
             chunk=[
-                {"record_index": 1, "match_value": "C001"},
-                {"record_index": 2, "match_value": "C002"},
+                {"record_index": 1, "match_value": 1001},
+                {"record_index": 2, "match_value": 1002},
             ],
         )
 
@@ -873,13 +873,13 @@ class D365BatchRetryTests(unittest.TestCase):
                 {"entity_set": "accounts", "match_field": "customer_id", "primary_id_field": "accountid"},
             )(),
             chunk=[
-                {"record_index": 1, "operation": "POST", "payload": {"name": "A"}, "match_value": "C001"},
+                {"record_index": 1, "operation": "POST", "payload": {"name": "A"}, "match_value": 1001},
                 {
                     "record_index": 2,
                     "operation": "PATCH",
                     "record_id": "00000000-0000-0000-0000-000000000002",
                     "payload": {"name": "B"},
-                    "match_value": "C002",
+                    "match_value": 1002,
                 },
             ],
         )
@@ -898,11 +898,11 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
         records = [
-            {"customer_id": "C001", "company": "Broken Row"},
-            {"customer_id": "C002", "company": "Good Row"},
+            {"customer_id": 1001, "company": "Broken Row"},
+            {"customer_id": 1002, "company": "Good Row"},
         ]
         calls: list[str] = []
 
@@ -949,7 +949,7 @@ class D365BatchRetryTests(unittest.TestCase):
                     )
                 return _FakeResponse(
                     status_code=200,
-                    body={"value": [{"accountid": "abc", "jh_museid": "C001", "jh_importid": "T20260529"}]},
+                    body={"value": [{"accountid": "abc", "jh_thinkidnbr": 1001, "jh_importid": "T20260529"}]},
                     method="GET",
                     url="https://example.test/api/data/v9.2/accounts",
                 )
@@ -980,10 +980,10 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
 
-        record_id, import_id = client._find_existing_record("customer", 1, table_config, "C001")
+        record_id, import_id = client._find_existing_record("customer", 1, table_config, 1001)
 
         self.assertEqual(record_id, "abc")
         self.assertEqual(import_id, "T20260529")
@@ -1031,11 +1031,11 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
 
         with self.assertRaises(requests.exceptions.HTTPError):
-            client._find_existing_record("customer", 1, table_config, "C001")
+            client._find_existing_record("customer", 1, table_config, 1001)
 
         self.assertEqual(session.calls, 1)
         self.assertEqual(refresh_calls, [])
@@ -1082,10 +1082,10 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-                {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+                {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
 
-        record_id, import_id = client._find_existing_record("customer", 1, table_config, "C001")
+        record_id, import_id = client._find_existing_record("customer", 1, table_config, 1001)
 
         self.assertIsNone(record_id)
         self.assertIsNone(import_id)
@@ -1103,8 +1103,8 @@ class D365BatchRetryTests(unittest.TestCase):
                     status_code=200,
                     body={
                         "value": [
-                            {"accountid": "abc", "jh_museid": "C001", "jh_importid": "T20260529"},
-                            {"accountid": "def", "jh_museid": "C001", "jh_importid": "T20260529"},
+                            {"accountid": "abc", "jh_thinkidnbr": 1001, "jh_importid": "T20260529"},
+                            {"accountid": "def", "jh_thinkidnbr": 1001, "jh_importid": "T20260529"},
                         ]
                     },
                     method="GET",
@@ -1138,11 +1138,11 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
 
         with self.assertRaises(ValueError) as exc:
-            client._find_existing_record("customer", 1, table_config, "C001")
+            client._find_existing_record("customer", 1, table_config, 1001)
 
         self.assertIn("returned 2 matches", str(exc.exception))
         self.assertEqual(session.calls, 1)
@@ -1280,7 +1280,7 @@ class D365BatchRetryTests(unittest.TestCase):
                     )
                 return _FakeResponse(
                     status_code=200,
-                    body={"value": [{"accountid": "abc", "jh_museid": "C001", "jh_importid": "T20260529"}]},
+                    body={"value": [{"accountid": "abc", "jh_thinkidnbr": 1001, "jh_importid": "T20260529"}]},
                     method="GET",
                     url="https://example.test/api/data/v9.2/accounts",
                 )
@@ -1313,14 +1313,14 @@ class D365BatchRetryTests(unittest.TestCase):
         table_config = type(
             "TableConfig",
             (),
-            {"entity_set": "accounts", "match_field": "jh_museid", "primary_id_field": "accountid"},
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
         )()
 
         with patch("crm_json_converter.d365.client.time.sleep") as sleep_mock, patch(
             "crm_json_converter.d365.client.random.uniform",
             return_value=0.0,
         ):
-            record_id, import_id = client._find_existing_record("customer", 1, table_config, "C001")
+            record_id, import_id = client._find_existing_record("customer", 1, table_config, 1001)
 
         self.assertEqual(record_id, "abc")
         self.assertEqual(import_id, "T20260529")

@@ -12,6 +12,10 @@ HTTP_STATUS_PATTERN = re.compile(r"HTTP/\d(?:\.\d)?\s+(\d{3})")
 def build_odata_filter(field_name: str, value: Any) -> str:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return f"{field_name} eq {value}"
+    if field_name == "jh_thinkidnbr" and isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return f"{field_name} eq {int(text)}"
     escaped = str(value).replace("'", "''")
     return f"{field_name} eq '{escaped}'"
 

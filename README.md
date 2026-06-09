@@ -8,13 +8,15 @@ This project supports four source tables and turns source CRM JSON into D365-rea
 
 | Source table | D365 target | Notes |
 |---|---|---|
-| `customer` | `Account` | Maps customer records into D365 accounts, including addresses, contact details, and ringgold fields. |
-| `agency` | `Account` | Maps agency records into D365 accounts, including commission fields and contact lookup behavior. |
+| `customer` | `Account` | Maps customer records into D365 accounts, including addresses, contact details, and ringgold fields. `jh_thinkidnbr` is the account key. |
+| `agency` | `Account` | Maps agency records into D365 accounts, including commission fields and contact lookup behavior. `jh_thinkidnbr` is the account key. |
 | `payment` | `jh_entitlement` | Maps payment records into entitlements. `jh_name` is computed from `orderhdr_id:order_item_seq`. |
 | `payment_item` | `jh_entitlementitems` | Maps payment item records into entitlement items. The parent entitlement is resolved from `orderhdr_id`; `jh_name` is computed from the composite `orderhdr_id:order_item_seq`; `order_status` / `payment_status` are numeric choice fields. |
 
 Note:
 
+- `jh_thinkidnbr` is the key used for customer and agency account matching.
+- The current mapper does not emit `jh_museid` for customer or agency records.
 - `orderhdr_id:order_item_seq` is the composite key used to build `jh_name` for `payment` and `payment_item`.
 - For `payment_item`, that composite value is also used when deduping source rows before lookup and write.
 

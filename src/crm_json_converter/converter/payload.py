@@ -6,6 +6,15 @@ from .mappings import get_table_mapping
 
 
 def _build_lookup_bind_path(entity_set: str, key_name: str, key_value: Any) -> str:
+    if isinstance(key_value, bool):
+        text = str(key_value).lower()
+        return f"/{entity_set}({key_name}={text})"
+    if isinstance(key_value, (int, float)):
+        return f"/{entity_set}({key_name}={key_value})"
+    if key_name == "jh_thinkidnbr":
+        text = str(key_value).strip()
+        if text.isdigit():
+            return f"/{entity_set}({key_name}={int(text)})"
     text = str(key_value).replace("'", "''")
     return f"/{entity_set}({key_name}='{text}')"
 

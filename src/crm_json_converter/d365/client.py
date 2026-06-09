@@ -36,6 +36,23 @@ def _normalize_lookup_key(value: Any) -> str:
     return " ".join(str(value).split())
 
 
+def _coerce_int_lookup_value(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    return None
+
+
 class D365Client:
     def __init__(self, config: D365Config, *, debug_http: bool = False) -> None:
         self.config = config
@@ -290,19 +307,19 @@ class D365Client:
         )
 
     def _payment_account_lookup_record_id(self, customer_id: Any, record_index: int) -> str | None:
-        account_id = str(customer_id).strip()
-        if not account_id:
+        account_id = _coerce_int_lookup_value(customer_id)
+        if account_id is None:
             return None
         account_table_config = D365TableConfig(
             entity_set="accounts",
-            match_field="jh_museid",
+            match_field="jh_thinkidnbr",
             primary_id_field="accountid",
         )
         existing_id, _ = self._find_existing_record_compat(
             "customer",
             record_index,
             account_table_config,
-            lookup_values={"jh_museid": account_id},
+            lookup_values={"jh_thinkidnbr": account_id},
         )
         if not existing_id:
             raise ValueError(f"account with account_id={account_id} does not exist")
@@ -1381,14 +1398,14 @@ class D365Client:
             chunk_logs.append(f"[crm-json-transform] payment accounts lookup phase: records {first_index}-{last_index}")
         for row in source_chunk:
             record = row["record"]
-            customer_id = str(record.get("customer_id") or "").strip()
-            if not customer_id:
+            customer_id = _coerce_int_lookup_value(record.get("customer_id"))
+            if customer_id is None:
                 continue
             account_lookup_rows.append(
                 {
                     "record_index": row["record_index"],
                     "match_value": customer_id,
-                    "lookup_values": {"jh_museid": customer_id},
+                    "lookup_values": {"jh_thinkidnbr": customer_id},
                 }
             )
 
@@ -1396,7 +1413,7 @@ class D365Client:
         if account_lookup_rows:
             account_table_config = D365TableConfig(
                 entity_set="accounts",
-                match_field="jh_museid",
+                match_field="jh_thinkidnbr",
                 primary_id_field="accountid",
             )
             account_lookup_results = self.batch.lookup_existing_ids(
@@ -1407,8 +1424,8 @@ class D365Client:
             for row in source_chunk:
                 record_index = row["record_index"]
                 record = row["record"]
-                customer_id = str(record.get("customer_id") or "").strip()
-                if customer_id:
+                customer_id = _coerce_int_lookup_value(record.get("customer_id"))
+                if customer_id is not None:
                     if record_index not in account_lookup_results:
                         error_text = f"account with account_id={customer_id} does not exist"
                         chunk_failures.append(f"record {record_index}: {error_text}")

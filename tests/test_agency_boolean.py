@@ -12,13 +12,13 @@ from crm_json_converter.converter.mappings import get_table_mapping
 
 
 class AgencyBooleanTests(unittest.TestCase):
-    def test_agency_customer_id_is_emitted_as_jh_museid(self) -> None:
+    def test_agency_customer_id_is_emitted_as_jh_thinkidnbr(self) -> None:
         mapping = get_table_mapping("agency")
         field_map = {field.source_column: field for field in mapping.fields}
         errors: list[str] = []
         sanitized = sanitize_record(
             {
-                "agency_customer_id": "A123",
+                "agency_customer_id": 123,
                 "company": "Example Agency",
             },
             field_map,
@@ -29,7 +29,8 @@ class AgencyBooleanTests(unittest.TestCase):
         payload = build_d365_payload("agency", sanitized)
 
         self.assertEqual(errors, [])
-        self.assertEqual(payload["jh_museid"], "A123")
+        self.assertEqual(payload["jh_thinkidnbr"], 123)
+        self.assertNotIn("jh_museid", payload)
 
     def test_agency_bill_to_serializes_as_boolean(self) -> None:
         mapping = get_table_mapping("agency")
@@ -37,7 +38,7 @@ class AgencyBooleanTests(unittest.TestCase):
         errors: list[str] = []
         sanitized = sanitize_record(
             {
-                "agency_customer_id": "A123",
+                "agency_customer_id": 123,
                 "company": "Example Agency",
                 "agency_bill_to": "Yes",
             },
@@ -57,7 +58,7 @@ class AgencyBooleanTests(unittest.TestCase):
         errors: list[str] = []
         sanitized = sanitize_record(
             {
-                "agency_customer_id": "A123",
+                "agency_customer_id": 123,
                 "company": "Example Agency",
                 "fname": "Jane",
                 "initial_name": "Q",
