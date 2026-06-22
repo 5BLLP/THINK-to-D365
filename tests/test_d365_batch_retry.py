@@ -10,6 +10,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from crm_json_converter.converter.payload import build_entitlement_guid
 from crm_json_converter.d365.batch import D365BatchRunner
 from crm_json_converter.d365.client import D365Client
 from crm_json_converter.d365.models import D365BatchConfig, D365Config, D365LogConfig, D365TableConfig
@@ -583,10 +584,12 @@ class D365BatchRetryTests(unittest.TestCase):
                 if table_name != "entitlement":
                     return {}
                 results: dict[int, dict[str, str | None]] = {}
+                expected_guid_1 = str(build_entitlement_guid({"orderhdr_id": "ENT-1"}))
+                expected_guid_2 = str(build_entitlement_guid({"orderhdr_id": "ENT-2"}))
                 for row in chunk:
-                    order_id = row["lookup_values"]["jh_entitlementid"]
+                    entitlement_id = str(row["lookup_values"]["jh_entitlementid"])
                     results[row["record_index"]] = {
-                        "record_id": "ent-guid-1" if order_id == "ENT-1" else "ent-guid-2",
+                        "record_id": "ent-guid-1" if entitlement_id == expected_guid_1 else "ent-guid-2",
                         "import_id": "T20260529",
                     }
                 return results
@@ -647,10 +650,10 @@ class D365BatchRetryTests(unittest.TestCase):
         def _find_existing_record_compat(table_name, record_index, table_config, *, match_value=None, lookup_values=None):  # noqa: ANN001, ANN201
             lookup_calls.append((table_name, record_index, lookup_values))
             if table_name == "entitlement":
-                order_id = lookup_values["jh_entitlementid"] if lookup_values else match_value
-                if order_id == "ENT-1":
+                entitlement_id = lookup_values["jh_entitlementid"] if lookup_values else match_value
+                if entitlement_id == "ENT-1":
                     return None, None
-                if order_id == "ENT-2":
+                if entitlement_id == "ENT-2":
                     return None, None
             if table_name == "payment_item" and lookup_values:
                 entitlement_id = lookup_values["_jh_entitlementid_value"]

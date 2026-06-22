@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from uuid import UUID, uuid5
 from typing import Any
 
 from .mappings import get_table_mapping
@@ -21,6 +22,20 @@ def _build_lookup_bind_path(entity_set: str, key_name: str, key_value: Any) -> s
 
 def _build_entity_bind_path(entity_set: str, record_id: Any) -> str:
     return f"/{entity_set}({record_id})"
+
+
+def build_entitlement_guid(sanitized_record: dict[str, Any]) -> UUID:
+    order_id = str(sanitized_record.get("orderhdr_id") or "").strip()
+    if not order_id:
+        raise ValueError("entitlement requires orderhdr_id to build jh_entitlementid")
+    try:
+        return UUID(order_id)
+    except (TypeError, ValueError):
+        return uuid5(UUID("12345678-1234-5678-1234-567812345678"), f"jh_entitlementid:{order_id}")
+
+
+def build_entitlement_id(sanitized_record: dict[str, Any]) -> str:
+    return str(build_entitlement_guid(sanitized_record))
 
 
 def build_payment_name(sanitized_record: dict[str, Any]) -> str:
@@ -67,9 +82,8 @@ def build_d365_payload(
         if table_name == "payment_item" and field.source_column == "company":
             continue
         if table_name == "entitlement" and field.crm_schema_name == "jh_entitlementid":
-            entitlement_id = sanitized_record.get(field.source_column)
-            if entitlement_id in {None, ""}:
-                raise ValueError("entitlement requires orderhdr_id to build jh_entitlementid")
+            payload[field.crm_schema_name] = build_entitlement_id(sanitized_record)
+            continue
         if table_name in {"payment", "payment_item"} and field.crm_schema_name == "jh_name":
             payload[field.crm_schema_name] = build_payment_name(sanitized_record)
             continue

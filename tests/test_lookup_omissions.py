@@ -54,7 +54,7 @@ class LookupOmissionTests(unittest.TestCase):
         payload = build_d365_payload("entitlement", sanitized)
 
         self.assertEqual(errors, [])
-        self.assertEqual(payload["jh_entitlementid"], "19555989")
+        self.assertEqual(payload["jh_entitlementid"], "115040f2-c544-59bc-80f5-8a13d8786f63")
         self.assertEqual(payload["jh_starton"], "2023-11-28T10:41:21")
         self.assertEqual(payload["jh_endon"], "2024-12-31T00:00:00")
 
@@ -167,7 +167,7 @@ class LookupOmissionTests(unittest.TestCase):
         self.assertEqual(sanitized["expire_date"], "2023-11-29T10:41:21")
         self.assertEqual(
             field_map["orderhdr_id"].lookup_bind_key,
-            "jh_orderid",
+            "jh_entitlementid",
         )
         name_field = next(field for field in mapping.fields if field.crm_schema_name == "jh_name")
         self.assertIsNone(name_field.source_column)

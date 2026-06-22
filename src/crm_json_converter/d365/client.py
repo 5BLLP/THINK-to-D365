@@ -9,6 +9,7 @@ from typing import Any
 
 from ..converter import (
     build_d365_payload,
+    build_entitlement_guid,
     build_payment_name,
     get_sanitized_records,
     get_source_column_for_schema,
@@ -156,6 +157,8 @@ class D365Client:
         for field_name in self._lookup_field_names(table_name, table_config):
             if table_name == "payment" and field_name == "jh_name":
                 value = payload.get(field_name)
+            elif table_name == "entitlement" and field_name == "jh_entitlementid":
+                value = build_entitlement_guid(record)
             else:
                 source_column = get_source_column_for_schema(table_name, field_name)
                 value = record.get(source_column) if source_column else payload.get(field_name)
@@ -821,7 +824,7 @@ class D365Client:
             {
                 "record_index": index,
                 "match_value": order_id,
-                "lookup_values": {entitlement_table.match_field: order_id},
+                "lookup_values": {entitlement_table.match_field: build_entitlement_guid({"orderhdr_id": order_id})},
             }
             for index, order_id in enumerate(unique_order_ids, start=1)
         ]
