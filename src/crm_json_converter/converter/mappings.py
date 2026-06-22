@@ -35,6 +35,17 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
             FieldMapping("city", "City", "address1_city", "string", max_length=100),
             FieldMapping("state_name", "State/Province", "address1_stateorprovince", "string", max_length=100),
             FieldMapping("country", "Country/Region", "address1_country", "string", max_length=100),
+            FieldMapping(
+                "country",
+                "country",
+                "jh_countryid",
+                "string",
+                lookup_target="jh_country",
+                lookup_bind_entity_set="jh_countries",
+                lookup_bind_key="jh_name",
+
+
+            ),
             FieldMapping("zip", "ZIP/Postal Code", "address1_postalcode", "string", max_length=100),
             FieldMapping("email", "Email", "emailaddress1", "string", max_length=100),
             FieldMapping(
@@ -240,7 +251,7 @@ def describe_table_mapping(table_name: str) -> dict[str, Any]:
         "target_entity": mapping.target_entity,
         "d365_enabled": mapping.d365_enabled,
         "fields": [asdict(field) for field in mapping.fields],
-    }
+    } 
 
 
 def get_source_column_for_schema(table_name: str, crm_schema_name: str) -> str | None:
