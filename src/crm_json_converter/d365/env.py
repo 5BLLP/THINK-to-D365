@@ -76,6 +76,11 @@ def load_config() -> D365Config:
             match_field=os.environ["D365_AGENCY_MATCH_FIELD"],
             primary_id_field=os.environ["D365_AGENCY_PRIMARY_ID_FIELD"],
         ),
+        "entitlement": D365TableConfig(
+            entity_set=os.environ["D365_PAYMENT_ENTITY_SET"],
+            match_field="jh_entitlementid",
+            primary_id_field=os.environ["D365_PAYMENT_PRIMARY_ID_FIELD"],
+        ),
         "payment": D365TableConfig(
             entity_set=os.environ["D365_PAYMENT_ENTITY_SET"],
             match_field=os.environ["D365_PAYMENT_MATCH_FIELD"],

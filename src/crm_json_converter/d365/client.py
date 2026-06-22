@@ -234,6 +234,34 @@ class D365Client:
         payload_record = dict(record)
         payload_record["_jh_entitlement_record_id"] = entitlement_record_id
         return payload_record
+
+    def _payment_item_entitlement_table_config(self) -> D365TableConfig:
+        config = getattr(self, "config", None)
+        if config is None:
+            raise ValueError("D365 entitlement table is not configured for payment_item push")
+        entitlement_table = config.tables.get("entitlement")
+        if entitlement_table is not None:
+            return entitlement_table
+        payment_table = config.tables.get("payment")
+        if payment_table is None:
+            raise ValueError("D365 entitlement table is not configured for payment_item push")
+        return D365TableConfig(
+            entity_set=payment_table.entity_set,
+            match_field="jh_entitlementid",
+            primary_id_field=payment_table.primary_id_field,
+        )
+
+    def _payment_item_entitlement_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen_order_ids: set[str] = set()
+        entitlement_records_reversed: list[dict[str, Any]] = []
+        for record in reversed(records):
+            order_id, _, _ = self._payment_item_source_parts(record)
+            if not order_id or order_id in seen_order_ids:
+                continue
+            seen_order_ids.add(order_id)
+            entitlement_records_reversed.append(record)
+        return list(reversed(entitlement_records_reversed))
+
     def _customer_payload_record(
                 self,
                 record: dict[str, Any],
@@ -773,10 +801,10 @@ class D365Client:
         *,
         records: list[dict[str, Any]],
     ) -> dict[str, str]:
+        entitlement_table = self._payment_item_entitlement_table_config()
         config = getattr(self, "config", None)
-        if config is None or "payment" not in getattr(config, "tables", {}):
+        if config is None:
             return {}
-        payment_table = config.tables["payment"]
         unique_order_ids: list[str] = []
         seen_order_ids: set[str] = set()
         for record in records:
@@ -790,13 +818,17 @@ class D365Client:
             return entitlement_ids
 
         lookup_rows = [
-            {"record_index": index, "match_value": order_id, "lookup_values": {"jh_orderid": order_id}}
+            {
+                "record_index": index,
+                "match_value": order_id,
+                "lookup_values": {entitlement_table.match_field: order_id},
+            }
             for index, order_id in enumerate(unique_order_ids, start=1)
         ]
         for chunk in chunked(lookup_rows, self._batch_flow_chunk_size()):
             lookup_results = self.batch.lookup_existing_ids(
-                table_name="payment",
-                table_config=payment_table,
+                table_name="entitlement",
+                table_config=entitlement_table,
                 chunk=chunk,
             )
             for record_index, result in lookup_results.items():
@@ -816,8 +848,22 @@ class D365Client:
         failures: list[str] = []
         current_import_id = self._current_import_id()
         seen_source_keys: dict[tuple[str, str], int] = {}
-        payload_rows: list[dict[str, Any]] = []
+        entitlement_table = self._payment_item_entitlement_table_config()
+        entitlement_records = self._payment_item_entitlement_records(records)
 
+        if entitlement_records:
+            logs.append(
+                f"[crm-json-transform] payment item entitlement upsert phase: {len(entitlement_records)} records"
+            )
+            try:
+                entitlement_logs = self._upsert_table_records_batch("entitlement", entitlement_table, entitlement_records)
+                logs.extend(entitlement_logs)
+            except Exception as exc:
+                failures.append(f"entitlement stage: {exc}")
+
+        entitlement_ids = self._resolve_payment_item_entitlement_ids(records=records)
+
+        payload_rows: list[dict[str, Any]] = []
         for record_index, record in enumerate(records, start=1):
             order_id, sequence, source_display = self._payment_item_source_parts(record)
             if not order_id or not sequence:
@@ -837,7 +883,10 @@ class D365Client:
             first_seen_index = seen_source_keys.get(source_key)
             if first_seen_index is not None:
                 message = f"duplicate {source_display} (first seen at record {first_seen_index})"
-                logs.append(f"[crm-json-transform] record {record_index}: skipped duplicate {source_display} (first seen at record {first_seen_index})")
+                logs.append(
+                    f"[crm-json-transform] record {record_index}: skipped duplicate {source_display} "
+                    f"(first seen at record {first_seen_index})"
+                )
                 self.logger.write(
                     event_type="record_upsert",
                     table_name=table_name,
@@ -850,6 +899,24 @@ class D365Client:
                 )
                 continue
             seen_source_keys[source_key] = record_index
+
+            entitlement_record_id = entitlement_ids.get(order_id)
+            if not entitlement_record_id:
+                error_text = (
+                    f"entitlement lookup returned no records for jh_entitlementid={order_id or '(empty)'} "
+                    f"(orderhdr_id={order_id or '(empty)'} and order_item_seq={sequence or '(empty)'})"
+                )
+                failures.append(f"record {record_index}: {error_text}")
+                self.logger.write(
+                    event_type="record_upsert",
+                    table_name=table_name,
+                    record_index=record_index,
+                    outcome="failure",
+                    error=error_text,
+                    mode="batch",
+                )
+                continue
+
             payload_rows.append(
                 {
                     "record_index": record_index,
@@ -857,6 +924,7 @@ class D365Client:
                     "order_id": order_id,
                     "sequence": sequence,
                     "source_display": source_display,
+                    "entitlement_record_id": entitlement_record_id,
                     "match_value": sequence,
                 }
             )
@@ -866,37 +934,15 @@ class D365Client:
             if source_chunk:
                 first_index = source_chunk[0]["record_index"]
                 last_index = source_chunk[-1]["record_index"]
-                logs.append(f"[crm-json-transform] payment item entitlement lookup phase: records {first_index}-{last_index}")
-            entitlement_ids = self._resolve_payment_item_entitlement_ids(records=[row["record"] for row in source_chunk])
+                logs.append(f"[crm-json-transform] payment item write phase: records {first_index}-{last_index}")
             lookup_rows: list[dict[str, Any]] = []
             for row in source_chunk:
-                order_id, _, _ = self._payment_item_source_parts(row["record"])
-                entitlement_id = entitlement_ids.get(order_id)
-                if entitlement_id:
-                    row["entitlement_record_id"] = entitlement_id
-                    row["lookup_values"] = {
-                        "_jh_entitlementid_value": entitlement_id,
-                        "jh_name": self._payment_lookup_name(row["record"]),
-                    }
-                    row["lookup_display"] = self._lookup_display(row["lookup_values"])
-                    lookup_rows.append(row)
-                else:
-                    error_text = (
-                        f"entitlement lookup returned no records for jh_orderid={order_id or '(empty)'} "
-                        f"(orderhdr_id={row['order_id'] or '(empty)'} and order_item_seq={row['sequence'] or '(empty)'})"
-                    )
-                    failures.append(f"record {row['record_index']}: {error_text}")
-                    self.logger.write(
-                        event_type="record_upsert",
-                        table_name=table_name,
-                        record_index=row["record_index"],
-                        outcome="failure",
-                        error=error_text,
-                        mode="batch",
-                    )
-                    row["skip_write"] = True
-                    row["lookup_values"] = None
-                    row["lookup_display"] = row["source_display"]
+                row["lookup_values"] = {
+                    "_jh_entitlementid_value": row["entitlement_record_id"],
+                    "jh_name": self._payment_lookup_name(row["record"]),
+                }
+                row["lookup_display"] = self._lookup_display(row["lookup_values"])
+                lookup_rows.append(row)
             existing_ids: dict[int, str] = {}
             existing_import_ids: dict[int, str | None] = {}
             if lookup_rows:
@@ -911,15 +957,12 @@ class D365Client:
 
             write_rows: list[dict[str, Any]] = []
             for row in source_chunk:
-                if row.get("skip_write"):
-                    continue
                 record_index = row["record_index"]
                 record = row["record"]
                 lookup_display = row["lookup_display"]
                 record_id = existing_ids.get(record_index)
                 import_id = self._merge_import_id(existing_import_ids.get(record_index)) if record_id else current_import_id
-                entitlement_record_id = row.get("entitlement_record_id")
-                payload_record = self._payment_item_payload_record(record, entitlement_record_id) if entitlement_record_id else record
+                payload_record = self._payment_item_payload_record(record, row["entitlement_record_id"])
                 payload = build_d365_payload(table_name, payload_record, import_id=import_id)
                 write_rows.append(
                     {
@@ -937,7 +980,7 @@ class D365Client:
             if write_rows:
                 first_index = write_rows[0]["record_index"]
                 last_index = write_rows[-1]["record_index"]
-                logs.append(f"[crm-json-transform] payment item entitlement upsert phase: records {first_index}-{last_index}")
+                logs.append(f"[crm-json-transform] payment item item upsert phase: records {first_index}-{last_index}")
             write_row_by_index = {row["record_index"]: row for row in write_rows}
             write_chunks = self.batch.split_for_write(write_rows)
             write_results = self.batch.run_chunks(
@@ -1109,7 +1152,20 @@ class D365Client:
         failures: list[str] = []
         current_import_id = self._current_import_id()
         seen_source_keys: dict[tuple[str, str], int] = {}
-        payment_table = self.config.tables.get("payment") if hasattr(self, "config") else None
+        entitlement_table = self._payment_item_entitlement_table_config()
+        entitlement_records = self._payment_item_entitlement_records(records)
+
+        if entitlement_records:
+            logs.append(
+                f"[crm-json-transform] payment item entitlement upsert phase: {len(entitlement_records)} records"
+            )
+            try:
+                entitlement_logs = self._upsert_table_records_rowwise("entitlement", entitlement_table, entitlement_records)
+                logs.extend(entitlement_logs)
+            except Exception as exc:
+                failures.append(f"entitlement stage: {exc}")
+
+        entitlement_ids = self._resolve_payment_item_entitlement_ids(records=records)
 
         for record_index, record in enumerate(records, start=1):
             try:
@@ -1144,18 +1200,10 @@ class D365Client:
                     continue
                 seen_source_keys[source_key] = record_index
 
-                entitlement_lookup_name = self._payment_lookup_name(record)
-                entitlement_id = None
-                if payment_table is not None:
-                    entitlement_id, _ = self._find_existing_record_compat(
-                        "payment",
-                        record_index,
-                        payment_table,
-                        lookup_values={"jh_name": entitlement_lookup_name},
-                    )
+                entitlement_id = entitlement_ids.get(order_id)
                 if not entitlement_id:
                     error_text = (
-                        f"entitlement lookup returned no records for jh_name={entitlement_lookup_name or '(empty)'} "
+                        f"entitlement lookup returned no records for jh_entitlementid={order_id or '(empty)'} "
                         f"(orderhdr_id={order_id or '(empty)'} and order_item_seq={sequence or '(empty)'})"
                     )
                     failures.append(f"record {record_index}: {error_text}")
@@ -1169,14 +1217,16 @@ class D365Client:
                     )
                     continue
 
+                lookup_values = {
+                    "_jh_entitlementid_value": entitlement_id,
+                    "jh_name": self._payment_lookup_name(record),
+                }
+                lookup_display = self._lookup_display(lookup_values)
                 existing_id, existing_import_id = self._find_existing_record_compat(
                     table_name,
                     record_index,
                     table_config,
-                    lookup_values={
-                        "_jh_entitlementid_value": entitlement_id,
-                        "jh_name": self._payment_lookup_name(record),
-                    },
+                    lookup_values=lookup_values,
                 )
 
                 import_id = self._merge_import_id(existing_import_id) if existing_id else current_import_id
@@ -1191,7 +1241,7 @@ class D365Client:
                 else:
                     self._post_record(table_name, record_index, table_config.entity_set, payload)
                     operation = "POST"
-                logs.append(f"[crm-json-transform] record {record_index}: {operation} {table_config.entity_set} by {source_display}")
+                logs.append(f"[crm-json-transform] record {record_index}: {operation} {table_config.entity_set} by {lookup_display}")
                 self.logger.write(
                     event_type="record_upsert",
                     table_name=table_name,
@@ -1200,7 +1250,7 @@ class D365Client:
                     operation=operation,
                     entity_set=table_config.entity_set,
                     match_field=table_config.match_field,
-                    match_value=source_display,
+                    match_value=lookup_display,
                     mode="row",
                 )
             except Exception as exc:
