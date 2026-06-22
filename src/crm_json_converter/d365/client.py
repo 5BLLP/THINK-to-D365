@@ -60,6 +60,7 @@ class D365Client:
         self._requests = __import__("requests")
         self._msal = __import__("msal")
         self.logger = StructuredLogger(config.logging)
+        self._country_cache: dict[str, str | None] = {}
 
         self._msal_app = self._msal.ConfidentialClientApplication(
             client_id=self.config.client_id,
@@ -141,6 +142,7 @@ class D365Client:
 
     def _lookup_field_names(self, table_name: str, table_config: D365TableConfig) -> tuple[str, ...]:
         lookup_fields = getattr(table_config, "lookup_fields", None)
+    
         return lookup_fields or (table_config.match_field,)
 
     def _lookup_values_for_payload(
@@ -160,6 +162,7 @@ class D365Client:
             if self._is_account_table(table_name) and field_name == table_config.match_field:
                 value = _normalize_lookup_key(value)
             lookup_values[field_name] = value
+            
         return lookup_values
 
     def _lookup_display(self, lookup_values: dict[str, Any]) -> str:
@@ -231,6 +234,17 @@ class D365Client:
         payload_record = dict(record)
         payload_record["_jh_entitlement_record_id"] = entitlement_record_id
         return payload_record
+    def _customer_payload_record(
+                self,
+                record: dict[str, Any],
+                country_record_id:str
+        )->dict[str,Any]:
+
+            payload_record=dict(record)
+
+            payload_record["_jh_country_record_id"]=country_record_id
+
+            return payload_record
 
     def _payment_item_sequence_lookup_value(self, sequence: Any) -> int | Any:
         if isinstance(sequence, bool):
@@ -425,10 +439,45 @@ class D365Client:
         logs: list[str] = []
         seen_lookup_keys: dict[str, int] = {}
         payload_rows_reversed: list[dict[str, Any]] = []
+        
+        
 
         for record_index in range(len(records), 0, -1):
             record = records[record_index - 1]
-            base_payload = build_d365_payload(table_name, record, import_id=current_import_id)
+            payload_record = dict(record)
+
+            country = payload_record.get("country")
+
+            if country:
+
+                country = country.strip().upper()
+
+
+                if country not in self._country_cache:
+
+                    country_config = D365TableConfig(
+                        entity_set="jh_countries",
+                        match_field="jh_name",
+                        primary_id_field="jh_countryid"
+                    )
+
+
+                    country_id,_ = self._find_existing_record_compat(
+
+                        "country",
+                        record_index,
+                        country_config,
+
+                        lookup_values={
+                            "jh_name":country
+                        }
+
+                    )
+                    self._country_cache[country] = country_id
+                payload_record["_jh_country_record_id"] = self._country_cache[country]
+
+
+            base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
             if not base_payload:
                 logs.append(f"[crm-json-transform] record {record_index}: no D365 payload generated, skipped")
                 self._log_record_upsert(
@@ -464,7 +513,7 @@ class D365Client:
             payload_rows_reversed.append(
                 {
                     "record_index": record_index,
-                    "record": record,
+                    "record": payload_record,
                     "match_value": base_payload.get(table_config.match_field),
                     "lookup_values": lookup_values,
                     "lookup_display": lookup_display,
@@ -1614,7 +1663,9 @@ class D365Client:
         if any(value in {None, ""} for value in lookup_values.values()):
             return None, None
         lookup_fields = self._lookup_field_names(table_name, table_config)
-        select_fields = [table_config.primary_id_field, *lookup_fields, "jh_importid"]
+        select_fields = [table_config.primary_id_field, *lookup_fields]
+        if table_config.entity_set != "jh_countries":
+            select_fields.append("jh_importid")
         response = self._request_with_retry(
             "get",
             self._entity_url(table_config.entity_set),

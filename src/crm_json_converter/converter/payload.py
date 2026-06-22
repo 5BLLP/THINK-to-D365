@@ -39,7 +39,6 @@ def _normalize_payment_item_name(value: Any) -> Any:
         return value
     return " ".join(value.split())
 
-
 def build_d365_payload(
     table_name: str,
     sanitized_record: dict[str, Any],
@@ -84,14 +83,34 @@ def build_d365_payload(
                 entitlement_record_id,
             )
             continue
+        if field.crm_schema_name=="jh_countryid":
+
+            country_guid = sanitized_record.get(
+
+                "_jh_country_record_id"
+
+            )
+            if country_guid:
+                payload[
+                    f"{field.crm_schema_name}@odata.bind"
+                ] = _build_entity_bind_path(
+                        field.lookup_bind_entity_set,
+                        country_guid
+                )
+
+
+            continue
         if field.lookup_bind_entity_set and field.lookup_bind_key and value in {None, ""}:
             continue
         if field.lookup_bind_entity_set and field.lookup_bind_key:
-            payload[f"{field.crm_schema_name}@odata.bind"] = _build_lookup_bind_path(
+            bind_path = _build_lookup_bind_path(
                 field.lookup_bind_entity_set,
                 field.lookup_bind_key,
                 value,
             )
+
+
+            payload[f"{field.crm_schema_name}@odata.bind"] = bind_path
             continue
         if table_name == "payment_item" and field.crm_schema_name == "jh_name":
             value = _normalize_payment_item_name(value)
@@ -101,5 +120,8 @@ def build_d365_payload(
         order_item_seq = sanitized_record.get("order_item_seq")
         if order_item_seq not in {None, ""}:
             payload["jh_sequence"] = order_item_seq
+       
+
+
 
     return payload
