@@ -103,13 +103,6 @@ def build_d365_payload(
         if field.lookup_bind_entity_set and field.lookup_bind_key and value in {None, ""}:
             continue
         if field.lookup_bind_entity_set and field.lookup_bind_key:
-            # print("================================")
-            # print("LOOKUP DETECTED")
-            # print("Source Column :", field.source_column)
-            # print("CRM Field     :", field.crm_schema_name)
-            # print("Entity Set    :", field.lookup_bind_entity_set)
-            # print("Lookup Key    :", field.lookup_bind_key)
-            # print("Source Value  :", value)
             bind_path = _build_lookup_bind_path(
                 field.lookup_bind_entity_set,
                 field.lookup_bind_key,
