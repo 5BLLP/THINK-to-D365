@@ -127,8 +127,8 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
         fields=(),
         d365_enabled=False,
     ),
-    "payment_item": TableMapping(
-        source_table="Payment Item",
+    "order_item": TableMapping(
+        source_table="Order Item",
         target_entity="jh_entitlementitems",
         d365_enabled=True,
         fields=(
@@ -230,7 +230,10 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
 
 
 def normalize_table_name(table_name: str) -> str:
-    return table_name.strip().lower().replace(" ", "_")
+    normalized = table_name.strip().lower().replace(" ", "_")
+    if normalized == "payment_item":
+        return "order_item"
+    return normalized
 
 
 def get_supported_tables() -> list[str]:

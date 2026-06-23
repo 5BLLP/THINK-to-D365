@@ -177,6 +177,9 @@ class D365Client:
     def _is_account_table(self, table_name: str) -> bool:
         return table_name in _ACCOUNT_TABLE_NAMES
 
+    def _is_order_item_table(self, table_name: str) -> bool:
+        return table_name in {"order_item", "payment_item"}
+
     def _log_record_upsert(
         self,
         *,
@@ -241,13 +244,13 @@ class D365Client:
     def _payment_item_entitlement_table_config(self) -> D365TableConfig:
         config = getattr(self, "config", None)
         if config is None:
-            raise ValueError("D365 entitlement table is not configured for payment_item push")
+            raise ValueError("D365 entitlement table is not configured for order_item push")
         entitlement_table = config.tables.get("entitlement")
         if entitlement_table is not None:
             return entitlement_table
         payment_table = config.tables.get("payment")
         if payment_table is None:
-            raise ValueError("D365 entitlement table is not configured for payment_item push")
+            raise ValueError("D365 entitlement table is not configured for order_item push")
         return D365TableConfig(
             entity_set=payment_table.entity_set,
             match_field="jh_entitlementid",
@@ -1114,7 +1117,7 @@ class D365Client:
             batch_max_workers=self.config.batch.max_workers,
         )
         try:
-            if table_name == "payment_item":
+            if self._is_order_item_table(table_name):
                 logs = (
                     self._upsert_payment_item_records_batch(table_name, table_config, records)
                     if self.config.batch.enabled
@@ -1282,7 +1285,7 @@ class D365Client:
             return self._upsert_account_table_records_rowwise(table_name, table_config, records)
         if table_name == "payment":
             return self._upsert_payment_table_records_rowwise(table_name, table_config, records)
-        if table_name == "payment_item":
+        if self._is_order_item_table(table_name):
             return self._upsert_payment_item_records_rowwise(table_name, table_config, records)
         logs: list[str] = []
         failures: list[str] = []
@@ -1406,7 +1409,7 @@ class D365Client:
     ) -> list[str]:
         if table_name == "payment":
             return self._upsert_payment_table_records_batch(table_name, table_config, records)
-        if table_name == "payment_item":
+        if self._is_order_item_table(table_name):
             return self._upsert_payment_item_records_batch(table_name, table_config, records)
         current_import_id = self._current_import_id()
         logs, payload_rows = self._prepare_lookup_driven_batch_rows(
