@@ -329,7 +329,10 @@ class D365Client:
             return None, message
         seen_source_keys[source_key] = record_index
 
-        payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
+        if table_name == "entitlement" and not record.get("_jh_entitlement_accounts_batched"):
+            payload_record = self._entitlement_payload_record(record, record_index=record_index)
+        else:
+            payload_record = record
         base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
         if not base_payload:
             message = f"[crm-json-transform] record {record_index}: no D365 payload generated, skipped"
@@ -387,6 +390,91 @@ class D365Client:
             payload_record["_jh_account_record_id"] = self._account_lookup_record_id(customer_id, record_index)
         return payload_record
 
+    def _entitlement_payload_record_batch(
+        self,
+        record: dict[str, Any],
+        *,
+        record_index: int,
+        account_record_ids: dict[tuple[str, int], str],
+    ) -> dict[str, Any]:
+        payload_record = dict(record)
+        for source_field, payload_key in (
+            ("agency_customer_id", "_jh_agentaccount_record_id"),
+            ("customer_id", "_jh_account_record_id"),
+        ):
+            source_value = payload_record.get(source_field)
+            if source_value in {None, ""}:
+                continue
+            account_id = _coerce_int_lookup_value(source_value)
+            if account_id is None:
+                raise ValueError(f"entitlement requires numeric {source_field} for record {record_index}")
+            account_record_id = account_record_ids.get((source_field, account_id))
+            if not account_record_id:
+                raise ValueError(
+                    f"entitlement requires a resolved account record id before payload build for {source_field}"
+                )
+            payload_record[payload_key] = account_record_id
+        payload_record["_jh_entitlement_accounts_batched"] = True
+        return payload_record
+
+    def _resolve_entitlement_account_record_ids_batch(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        record_indices: list[int] | None = None,
+    ) -> dict[tuple[str, int], str]:
+        if not records:
+            return {}
+        if record_indices is not None and len(record_indices) != len(records):
+            raise ValueError("record_indices must match records when resolving entitlement accounts")
+        account_table_config = D365TableConfig(
+            entity_set="accounts",
+            match_field="jh_thinkidnbr",
+            primary_id_field="accountid",
+        )
+        lookup_rows: list[dict[str, Any]] = []
+        lookup_keys: list[tuple[str, int]] = []
+        seen_keys: set[tuple[str, int]] = set()
+        indexed_records = (
+            zip(record_indices, records)
+            if record_indices is not None
+            else ((index, record) for index, record in enumerate(records, start=1))
+        )
+        for record_index, record in indexed_records:
+            for source_field in ("agency_customer_id", "customer_id"):
+                account_id = _coerce_int_lookup_value(record.get(source_field))
+                if account_id is None:
+                    continue
+                lookup_key = (source_field, account_id)
+                if lookup_key in seen_keys:
+                    continue
+                seen_keys.add(lookup_key)
+                lookup_keys.append(lookup_key)
+                lookup_rows.append(
+                    {
+                        "record_index": len(lookup_keys),
+                        "match_value": account_id,
+                        "lookup_values": {"jh_thinkidnbr": account_id},
+                    }
+                )
+
+        account_record_ids: dict[tuple[str, int], str] = {}
+        if not lookup_rows:
+            return account_record_ids
+
+        for chunk in self.batch.split_for_lookup(lookup_rows):
+            lookup_results = self.batch.lookup_existing_ids(
+                table_name="entitlement_account",
+                table_config=account_table_config,
+                chunk=chunk,
+            )
+            for record_index, result in lookup_results.items():
+                source_field, account_id = lookup_keys[record_index - 1]
+                record_id = result.get("record_id")
+                if record_id:
+                    account_record_ids[(source_field, account_id)] = record_id
+        return account_record_ids
+
     def _payment_payload_record(
         self,
         record: dict[str, Any],
@@ -407,6 +495,8 @@ class D365Client:
         table_config: D365TableConfig,
         records: list[dict[str, Any]],
         current_import_id: str,
+        seen_lookup_keys: dict[tuple[tuple[str, Any], ...], int] | None = None,
+        record_indices: list[int] | None = None,
     ) -> tuple[list[str], list[dict[str, Any]]]:
         if self._is_account_table(table_name):
             return self._prepare_account_lookup_rows(
@@ -418,11 +508,22 @@ class D365Client:
             )
 
         logs: list[str] = []
-        seen_lookup_keys: dict[tuple[tuple[str, Any], ...], int] = {}
+        seen_lookup_keys = seen_lookup_keys if seen_lookup_keys is not None else {}
         payload_rows: list[dict[str, Any]] = []
 
-        for record_index, record in enumerate(records, start=1):
-            payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
+        if record_indices is not None and len(record_indices) != len(records):
+            raise ValueError("record_indices must match records when preparing batch rows")
+        indexed_records = (
+            zip(record_indices, records)
+            if record_indices is not None
+            else ((index, record) for index, record in enumerate(records, start=1))
+        )
+
+        for record_index, record in indexed_records:
+            if table_name == "entitlement" and not record.get("_jh_entitlement_accounts_batched"):
+                payload_record = self._entitlement_payload_record(record, record_index=record_index)
+            else:
+                payload_record = record
             base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
             if not base_payload:
                 logs.append(f"[crm-json-transform] record {record_index}: no D365 payload generated, skipped")
@@ -1429,6 +1530,8 @@ class D365Client:
     ) -> list[str]:
         if table_name == "payment":
             return self._upsert_payment_table_records_batch(table_name, table_config, records)
+        if table_name == "entitlement":
+            return self._upsert_entitlement_table_records_batch(table_name, table_config, records)
         if self._is_order_item_table(table_name):
             return self._upsert_payment_item_records_batch(table_name, table_config, records)
         current_import_id = self._current_import_id()
@@ -1449,6 +1552,68 @@ class D365Client:
             )
             logs.extend(chunk_logs)
             failures.extend(chunk_failures)
+        if failures:
+            raise ValueError("Batch upsert failed for " + "; ".join(failures))
+        return logs
+
+    def _upsert_entitlement_table_records_batch(
+        self,
+        table_name: str,
+        table_config: D365TableConfig,
+        records: list[dict[str, Any]],
+    ) -> list[str]:
+        logs: list[str] = []
+        failures: list[str] = []
+        current_import_id = self._current_import_id()
+        flow_chunk_size = self._batch_flow_chunk_size()
+        seen_lookup_keys: dict[tuple[tuple[str, Any], ...], int] = {}
+
+        indexed_records = list(enumerate(records, start=1))
+        for indexed_chunk in chunked(indexed_records, flow_chunk_size):
+            chunk_record_indices = [item[0] for item in indexed_chunk]
+            chunk_records = [item[1] for item in indexed_chunk]
+            try:
+                account_record_ids = self._resolve_entitlement_account_record_ids_batch(
+                    chunk_records,
+                    record_indices=chunk_record_indices,
+                )
+                prepared_records = [
+                    self._entitlement_payload_record_batch(
+                        record,
+                        record_index=record_index,
+                        account_record_ids=account_record_ids,
+                    )
+                    for record_index, record in indexed_chunk
+                ]
+                lookup_logs, payload_rows = self._prepare_lookup_driven_batch_rows(
+                    table_name=table_name,
+                    table_config=table_config,
+                    records=prepared_records,
+                    current_import_id=current_import_id,
+                    seen_lookup_keys=seen_lookup_keys,
+                    record_indices=chunk_record_indices,
+                )
+                logs.extend(lookup_logs)
+                chunk_logs, chunk_failures = self._run_lookup_driven_batch_chunk(
+                    table_name=table_name,
+                    table_config=table_config,
+                    source_chunk=payload_rows,
+                    current_import_id=current_import_id,
+                )
+                logs.extend(chunk_logs)
+                failures.extend(chunk_failures)
+            except Exception as exc:
+                error_text = str(exc)
+                failures.append(f"records {chunk_record_indices[0]}-{chunk_record_indices[-1]}: {error_text}")
+                for record_index in chunk_record_indices:
+                    self._log_record_upsert(
+                        table_name=table_name,
+                        record_index=record_index,
+                        outcome="failure",
+                        mode="batch",
+                        error=error_text,
+                    )
+
         if failures:
             raise ValueError("Batch upsert failed for " + "; ".join(failures))
         return logs

@@ -480,8 +480,20 @@ class D365BatchRetryTests(unittest.TestCase):
             def __init__(self, events: list[tuple[str, list[int]]]) -> None:
                 self.calls = events
 
+            def split_for_lookup(self, rows):  # noqa: ANN001, ANN201
+                self.calls.append(("split_for_lookup", [row["record_index"] for row in rows]))
+                return [rows]
+
             def lookup_existing_ids(self, *, table_name, table_config, chunk):  # noqa: ANN001, ANN201
                 self.calls.append((f"lookup:{table_name}", [row["record_index"] for row in chunk]))
+                if table_name == "entitlement_account" and chunk:
+                    return {
+                        row["record_index"]: {
+                            "record_id": f"acct-{row['lookup_values']['jh_thinkidnbr']}",
+                            "import_id": "T20260529",
+                        }
+                        for row in chunk
+                    }
                 if table_name == "entitlement" and chunk:
                     first_row = chunk[0]
                     return {
@@ -548,8 +560,20 @@ class D365BatchRetryTests(unittest.TestCase):
             primary_id_field="jh_entitlementid",
         )
         records = [
-            {"orderhdr_id": "ENT-1", "start_date": "2026-06-01T00:00:00", "expire_date": "2026-12-31T00:00:00"},
-            {"orderhdr_id": "ENT-2", "start_date": "2026-06-01T00:00:00", "expire_date": "2026-12-31T00:00:00"},
+            {
+                "orderhdr_id": "ENT-1",
+                "agency_customer_id": 101,
+                "customer_id": 201,
+                "start_date": "2026-06-01T00:00:00",
+                "expire_date": "2026-12-31T00:00:00",
+            },
+            {
+                "orderhdr_id": "ENT-2",
+                "agency_customer_id": 102,
+                "customer_id": 202,
+                "start_date": "2026-06-01T00:00:00",
+                "expire_date": "2026-12-31T00:00:00",
+            },
         ]
 
         with patch("crm_json_converter.d365.client.build_d365_payload") as build_payload:
@@ -558,16 +582,28 @@ class D365BatchRetryTests(unittest.TestCase):
                 "jh_starton": record.get("start_date"),
                 "jh_endon": record.get("expire_date"),
                 "jh_importid": import_id,
+                **(
+                    {
+                        "jh_agentaccountid@odata.bind": f"/accounts({record['_jh_agentaccount_record_id']})",
+                        "jh_accountid@odata.bind": f"/accounts({record['_jh_account_record_id']})",
+                    }
+                    if table_name == "entitlement"
+                    else {}
+                ),
             }
             logs = client._upsert_table_records_batch("entitlement", table_config, records)
 
         self.assertEqual(
             events,
             [
+                ("split_for_lookup", [1, 2]),
+                ("lookup:entitlement_account", [1, 2]),
                 ("lookup:entitlement", [1]),
                 ("split_for_write", [1]),
                 ("run_chunks", [1]),
                 ("write", [1]),
+                ("split_for_lookup", [1, 2]),
+                ("lookup:entitlement_account", [1, 2]),
                 ("lookup:entitlement", [2]),
                 ("split_for_write", [2]),
                 ("run_chunks", [2]),
@@ -576,6 +612,12 @@ class D365BatchRetryTests(unittest.TestCase):
         )
         self.assertTrue(any("record 1:" in line and "jh_entitlements by" in line for line in logs))
         self.assertTrue(any("record 2:" in line and "jh_entitlements by" in line for line in logs))
+        self.assertTrue(
+            any(
+                call[0] == "lookup:entitlement_account"
+                for call in events
+            )
+        )
 
     def test_payment_item_rowwise_upsert_writes_and_skips_duplicates(self) -> None:
         client = D365Client.__new__(D365Client)
