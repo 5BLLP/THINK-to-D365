@@ -134,6 +134,10 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 notes="Lookup bound to D365 collection title field jh_name.",
             ),
             FieldMapping(
+                "order_date", "jh_invoicedon", None, "datetime"
+            ),
+            FieldMapping("agency_customer_id", "jh_agentaccountid", None, "string", lookup_bind_entity_set="accounts", lookup_bind_key="jh_agentaccountid"),
+            FieldMapping(
                 "orderhdr_id",
                 "Entitlement",
                 "jh_entitlementid",

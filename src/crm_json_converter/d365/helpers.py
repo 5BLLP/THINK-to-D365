@@ -15,10 +15,18 @@ def build_odata_filter(field_name: str, value: Any) -> str:
         return f"{field_name} eq {value}"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return f"{field_name} eq {value}"
+
     if field_name == "jh_thinkidnbr" and isinstance(value, str):
         text = value.strip()
         if text.isdigit():
             return f"{field_name} eq {int(text)}"
+
+    try:
+        UUID(str(value))
+        return f"{field_name} eq {value}"
+    except ValueError:
+        pass
+
     escaped = str(value).replace("'", "''")
     return f"{field_name} eq '{escaped}'"
 
