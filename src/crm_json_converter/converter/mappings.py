@@ -109,6 +109,14 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 "string",
                 notes="Deterministically derived GUID from orderhdr_id.",
             ),
+            FieldMapping(
+                None,
+                "Name",
+                "jh_name",
+                "string",
+                max_length=20,
+                notes="Copied from orderhdr_id for the entitlement name field.",
+            ),
             FieldMapping("start_date", "Start Date", "jh_starton", "datetime", notes="Mapped to D365 entitlement start datetime field jh_starton."),
             FieldMapping("expire_date", "End Date", "jh_endon", "datetime", notes="Mapped to D365 entitlement end datetime field jh_endon."),
         ),
@@ -136,7 +144,15 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
             FieldMapping(
                 "order_date", "jh_invoicedon", None, "datetime"
             ),
-            FieldMapping("agency_customer_id", "jh_agentaccountid", None, "string", lookup_bind_entity_set="accounts", lookup_bind_key="jh_agentaccountid"),
+            FieldMapping(
+                "agency_customer_id",
+                "Agent Account",
+                "jh_agentaccountid",
+                "string",
+                lookup_bind_entity_set="accounts",
+                lookup_bind_key="jh_thinkidnbr",
+                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
+            ),
             FieldMapping(
                 "orderhdr_id",
                 "Entitlement",

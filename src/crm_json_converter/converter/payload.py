@@ -49,6 +49,15 @@ def build_payment_name(sanitized_record: dict[str, Any]) -> str:
     return value
 
 
+def build_entitlement_name(sanitized_record: dict[str, Any]) -> str:
+    order_id = str(sanitized_record.get("orderhdr_id") or "").strip()
+    if not order_id:
+        raise ValueError("entitlement requires orderhdr_id to build jh_name")
+    if len(order_id) > 20:
+        return order_id[:20]
+    return order_id
+
+
 def _normalize_payment_item_name(value: Any) -> Any:
     if not isinstance(value, str):
         return value
@@ -83,6 +92,9 @@ def build_d365_payload(
             continue
         if table_name == "entitlement" and field.crm_schema_name == "jh_entitlementid":
             payload[field.crm_schema_name] = build_entitlement_id(sanitized_record)
+            continue
+        if table_name == "entitlement" and field.crm_schema_name == "jh_name":
+            payload[field.crm_schema_name] = build_entitlement_name(sanitized_record)
             continue
         if table_name in {"payment", "payment_item"} and field.crm_schema_name == "jh_name":
             payload[field.crm_schema_name] = build_payment_name(sanitized_record)

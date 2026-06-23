@@ -10,16 +10,17 @@ This project supports five source tables and turns source CRM JSON into D365-rea
 |---|---|---|
 | `customer` | `Account` | Maps customer records into D365 accounts, including addresses, contact details, and ringgold fields. `jh_thinkidnbr` is the account key. |
 | `agency` | `Account` | Maps agency records into D365 accounts, including commission fields and contact lookup behavior. `jh_thinkidnbr` is the account key. |
-| `entitlement` | `jh_entitlement` | Maps order-item entitlement fields into D365 entitlements. `jh_entitlementid` comes from `orderhdr_id`; `jh_starton` / `jh_endon` come from `start_date` / `expire_date`. |
+| `entitlement` | `jh_entitlement` | Maps order-item entitlement fields into D365 entitlements. `jh_entitlementid` comes from `orderhdr_id`; `jh_name` also comes from `orderhdr_id`; `jh_starton` / `jh_endon` come from `start_date` / `expire_date`. |
 | `payment` | `jh_entitlement` | Reserved for future use. The mapper is currently disabled. |
-| `payment_item` | `jh_entitlementitems` | Maps order item records into entitlement items. The parent entitlement is resolved from `orderhdr_id`; `jh_name` is computed from the composite `orderhdr_id:order_item_seq`; `order_status` / `payment_status` are numeric choice fields; `jh_sequence` comes from `order_item_seq`. |
+| `payment_item` | `jh_entitlementitems` | Maps order item records into entitlement items. The parent entitlement is resolved from `orderhdr_id`; `agency_customer_id` binds to `jh_agentaccountid`; `jh_name` is computed from the composite `orderhdr_id:order_item_seq`; `order_status` / `payment_status` are numeric choice fields; `jh_sequence` comes from `order_item_seq`. |
 
 Note:
 
 - `jh_thinkidnbr` is the key used for customer and agency account matching.
 - The current mapper does not emit `jh_museid` for customer or agency records.
-- `orderhdr_id` is the entitlement key used to build `jh_entitlementid` for `entitlement`.
+- `orderhdr_id` is the entitlement key used to build `jh_entitlementid` and `jh_name` for `entitlement`.
 - `orderhdr_id:order_item_seq` is the composite key used to build `jh_name` for `payment_item`.
+- `agency_customer_id` on `payment_item` binds to `jh_agentaccountid` using the account key `jh_thinkidnbr`.
 - For `payment_item`, that composite value is also used when deduping source rows before lookup and write.
 
 ## Developer Workflow

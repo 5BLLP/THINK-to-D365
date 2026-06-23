@@ -55,8 +55,29 @@ class LookupOmissionTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(payload["jh_entitlementid"], "115040f2-c544-59bc-80f5-8a13d8786f63")
+        self.assertEqual(payload["jh_name"], "19555989")
         self.assertEqual(payload["jh_starton"], "2023-11-28T10:41:21")
         self.assertEqual(payload["jh_endon"], "2024-12-31T00:00:00")
+
+    def test_entitlement_name_is_truncated_to_field_length(self) -> None:
+        mapping = get_table_mapping("entitlement")
+        field_map = {field.source_column: field for field in mapping.fields}
+        errors: list[str] = []
+        sanitized = sanitize_record(
+            {
+                "orderhdr_id": "1234567890123456789012345",
+                "start_date": "Nov 28 2023 10:41:21:000AM",
+                "expire_date": "2024-12-31T00:00:00",
+            },
+            field_map,
+            1,
+            errors,
+        )
+
+        payload = build_d365_payload("entitlement", sanitized)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(payload["jh_name"], "12345678901234567890")
 
     def test_payment_table_is_disabled(self) -> None:
         mapping = get_table_mapping("payment")
@@ -133,6 +154,7 @@ class LookupOmissionTests(unittest.TestCase):
         sanitized = sanitize_record(
             {
                 "oc_desc": "Project MUSE Premium Collection",
+                "agency_customer_id": 123,
                 "orderhdr_id": 20831552,
                 "order_item_seq": 3,
                 "start_date": "Nov 28 2023 10:41:21:000AM",
@@ -158,6 +180,10 @@ class LookupOmissionTests(unittest.TestCase):
         self.assertEqual(
             payload["jh_entitlementid@odata.bind"],
             "/jh_entitlements(edbb81d1-365b-f111-bec6-000d3a3428b3)",
+        )
+        self.assertEqual(
+            payload["jh_agentaccountid@odata.bind"],
+            "/accounts(jh_thinkidnbr=123)",
         )
         self.assertEqual(payload["jh_name"], "20831552:3")
         self.assertEqual(payload["jh_orderstatus"], 6)
