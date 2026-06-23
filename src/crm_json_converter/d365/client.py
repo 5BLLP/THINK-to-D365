@@ -329,7 +329,8 @@ class D365Client:
             return None, message
         seen_source_keys[source_key] = record_index
 
-        base_payload = build_d365_payload(table_name, record, import_id=current_import_id)
+        payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
+        base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
         if not base_payload:
             message = f"[crm-json-transform] record {record_index}: no D365 payload generated, skipped"
             self._log_record_upsert(
@@ -354,8 +355,8 @@ class D365Client:
             None,
         )
 
-    def _payment_account_lookup_record_id(self, customer_id: Any, record_index: int) -> str | None:
-        account_id = _coerce_int_lookup_value(customer_id)
+    def _account_lookup_record_id(self, account_key_value: Any, record_index: int) -> str | None:
+        account_id = _coerce_int_lookup_value(account_key_value)
         if account_id is None:
             return None
         account_table_config = D365TableConfig(
@@ -372,6 +373,19 @@ class D365Client:
         if not existing_id:
             raise ValueError(f"account with account_id={account_id} does not exist")
         return existing_id
+
+    def _payment_account_lookup_record_id(self, customer_id: Any, record_index: int) -> str | None:
+        return self._account_lookup_record_id(customer_id, record_index)
+
+    def _entitlement_payload_record(self, record: dict[str, Any], *, record_index: int) -> dict[str, Any]:
+        payload_record = dict(record)
+        agency_customer_id = payload_record.get("agency_customer_id")
+        if agency_customer_id not in {None, ""}:
+            payload_record["_jh_agentaccount_record_id"] = self._account_lookup_record_id(agency_customer_id, record_index)
+        customer_id = payload_record.get("customer_id")
+        if customer_id not in {None, ""}:
+            payload_record["_jh_account_record_id"] = self._account_lookup_record_id(customer_id, record_index)
+        return payload_record
 
     def _payment_payload_record(
         self,
@@ -408,7 +422,8 @@ class D365Client:
         payload_rows: list[dict[str, Any]] = []
 
         for record_index, record in enumerate(records, start=1):
-            base_payload = build_d365_payload(table_name, record, import_id=current_import_id)
+            payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
+            base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
             if not base_payload:
                 logs.append(f"[crm-json-transform] record {record_index}: no D365 payload generated, skipped")
                 self.logger.write(
@@ -453,6 +468,7 @@ class D365Client:
                 {
                     "record_index": record_index,
                     "record": record,
+                    "payload_record": payload_record,
                     "match_value": base_payload.get(table_config.match_field),
                     "lookup_values": lookup_values,
                     "lookup_display": lookup_display,
@@ -574,7 +590,8 @@ class D365Client:
                 record=record,
                 current_import_id=current_import_id,
             )
-        base_payload = build_d365_payload(table_name, record, import_id=current_import_id)
+        payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
+        base_payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
         if not base_payload:
             return None
 
@@ -587,7 +604,7 @@ class D365Client:
             lookup_values=lookup_values,
         )
         import_id = self._merge_import_id(existing_import_id) if existing_id else current_import_id
-        payload = build_d365_payload(table_name, record, import_id=import_id)
+        payload = build_d365_payload(table_name, payload_record, import_id=import_id)
         if existing_id:
             self._patch_record(table_name, record_index, table_config.entity_set, existing_id, payload)
             operation = "PATCH"
@@ -708,13 +725,15 @@ class D365Client:
                 if record_id
                 else current_import_id
             )
-            payload = build_d365_payload(table_name, record, import_id=import_id)
+            payload_record = row.get("payload_record", record)
+            payload = build_d365_payload(table_name, payload_record, import_id=import_id)
             write_rows.append(
                 {
                     "record_index": record_index,
                     "operation": "PATCH" if record_id else "POST",
                     "record_id": record_id,
                     "record": record,
+                    "payload_record": payload_record,
                     "payload": payload,
                     "match_value": row.get("match_value"),
                     "lookup_values": row.get("lookup_values"),
@@ -1081,6 +1100,7 @@ class D365Client:
         record_index = source_row["record_index"]
         record = source_row["record"]
         lookup_values = source_row["lookup_values"]
+        payload_record = self._entitlement_payload_record(record, record_index=record_index) if table_name == "entitlement" else record
         existing_id, existing_import_id = self._find_existing_record_compat(
             table_name,
             record_index,
@@ -1090,12 +1110,12 @@ class D365Client:
         if existing_id:
             payload = build_d365_payload(
                 table_name,
-                record,
+                payload_record,
                 import_id=self._merge_import_id(existing_import_id),
             )
             self._patch_record(table_name, record_index, table_config.entity_set, existing_id, payload)
             return "PATCH", payload
-        payload = build_d365_payload(table_name, record, import_id=current_import_id)
+        payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
         self._post_record(table_name, record_index, table_config.entity_set, payload)
         return "POST", payload
 

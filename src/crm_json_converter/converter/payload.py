@@ -63,6 +63,7 @@ def _normalize_payment_item_name(value: Any) -> Any:
         return value
     return " ".join(value.split())
 
+
 def build_d365_payload(
     table_name: str,
     sanitized_record: dict[str, Any],
@@ -111,6 +112,19 @@ def build_d365_payload(
             payload[f"{field.crm_schema_name}@odata.bind"] = _build_entity_bind_path(
                 field.lookup_bind_entity_set or "jh_entitlements",
                 entitlement_record_id,
+            )
+            continue
+        if table_name == "entitlement" and field.crm_schema_name in {"jh_agentaccountid", "jh_accountid"}:
+            record_id_key = {
+                "jh_agentaccountid": "_jh_agentaccount_record_id",
+                "jh_accountid": "_jh_account_record_id",
+            }[field.crm_schema_name]
+            account_record_id = sanitized_record.get(record_id_key)
+            if account_record_id in {None, ""}:
+                raise ValueError(f"entitlement requires a resolved account record id before payload build for {field.crm_schema_name}")
+            payload[f"{field.crm_schema_name}@odata.bind"] = _build_entity_bind_path(
+                field.lookup_bind_entity_set or "accounts",
+                account_record_id,
             )
             continue
         if field.crm_schema_name=="jh_countryid":

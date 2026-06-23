@@ -119,6 +119,15 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 notes="Lookup bound to D365 account key field jh_thinkidnbr.",
             ),
             FieldMapping(
+                "customer_id",
+                "Account",
+                "jh_accountid",
+                "string",
+                lookup_bind_entity_set="accounts",
+                lookup_bind_key="jh_thinkidnbr",
+                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
+            ),
+            FieldMapping(
                 None,
                 "Name",
                 "jh_name",

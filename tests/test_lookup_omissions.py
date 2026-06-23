@@ -44,6 +44,7 @@ class LookupOmissionTests(unittest.TestCase):
             {
                 "orderhdr_id": 19555989,
                 "agency_customer_id": 123,
+                "customer_id": 456,
                 "start_date": "Nov 28 2023 10:41:21:000AM",
                 "expire_date": "2024-12-31T00:00:00",
             },
@@ -51,12 +52,15 @@ class LookupOmissionTests(unittest.TestCase):
             1,
             errors,
         )
+        sanitized["_jh_agentaccount_record_id"] = "11111111-1111-1111-1111-111111111111"
+        sanitized["_jh_account_record_id"] = "22222222-2222-2222-2222-222222222222"
 
         payload = build_d365_payload("entitlement", sanitized)
 
         self.assertEqual(errors, [])
         self.assertEqual(payload["jh_entitlementid"], "115040f2-c544-59bc-80f5-8a13d8786f63")
-        self.assertEqual(payload["jh_agentaccountid@odata.bind"], "/accounts(jh_thinkidnbr=123)")
+        self.assertEqual(payload["jh_agentaccountid@odata.bind"], "/accounts(11111111-1111-1111-1111-111111111111)")
+        self.assertEqual(payload["jh_accountid@odata.bind"], "/accounts(22222222-2222-2222-2222-222222222222)")
         self.assertEqual(payload["jh_name"], "19555989")
         self.assertEqual(payload["jh_starton"], "2023-11-28T10:41:21")
         self.assertEqual(payload["jh_endon"], "2024-12-31T00:00:00")
