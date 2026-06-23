@@ -104,7 +104,6 @@ class D365BatchRunner:
         for content_id, row in enumerate(chunk, start=1):
             lookup_values = row.get("lookup_values") or {table_config.match_field: row["match_value"]}
             filter_expr = self._lookup_filter_expr(lookup_values)
-            print(filter_expr)
             select_fields = [table_config.primary_id_field, *lookup_fields, "jh_importid"]
             select_expr = ",".join(dict.fromkeys(select_fields))
             query = urlencode(
