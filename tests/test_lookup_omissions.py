@@ -29,7 +29,7 @@ class LookupOmissionTests(unittest.TestCase):
         payload = build_d365_payload("customer", sanitized)
 
         self.assertEqual(errors, [])
-        self.assertEqual(payload["jh_thinkidnbr"], 94)
+        self.assertEqual(payload["jh_thinkidnbr"], "94")
         self.assertNotIn("jh_museid", payload)
 
     def test_entitlement_table_targets_entitlement(self) -> None:

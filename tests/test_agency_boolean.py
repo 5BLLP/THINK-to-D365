@@ -29,7 +29,7 @@ class AgencyBooleanTests(unittest.TestCase):
         payload = build_d365_payload("agency", sanitized)
 
         self.assertEqual(errors, [])
-        self.assertEqual(payload["jh_thinkidnbr"], 123)
+        self.assertEqual(payload["jh_thinkidnbr"], "123")
         self.assertNotIn("jh_museid", payload)
 
     def test_agency_bill_to_serializes_as_boolean(self) -> None:
