@@ -43,6 +43,7 @@ class LookupOmissionTests(unittest.TestCase):
         sanitized = sanitize_record(
             {
                 "orderhdr_id": 19555989,
+                "agency_customer_id": 123,
                 "start_date": "Nov 28 2023 10:41:21:000AM",
                 "expire_date": "2024-12-31T00:00:00",
             },
@@ -55,6 +56,7 @@ class LookupOmissionTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(payload["jh_entitlementid"], "115040f2-c544-59bc-80f5-8a13d8786f63")
+        self.assertEqual(payload["jh_agentaccountid@odata.bind"], "/accounts(jh_thinkidnbr=123)")
         self.assertEqual(payload["jh_name"], "19555989")
         self.assertEqual(payload["jh_starton"], "2023-11-28T10:41:21")
         self.assertEqual(payload["jh_endon"], "2024-12-31T00:00:00")
@@ -154,7 +156,6 @@ class LookupOmissionTests(unittest.TestCase):
         sanitized = sanitize_record(
             {
                 "oc_desc": "Project MUSE Premium Collection",
-                "agency_customer_id": 123,
                 "orderhdr_id": 20831552,
                 "order_item_seq": 3,
                 "start_date": "Nov 28 2023 10:41:21:000AM",
@@ -182,10 +183,8 @@ class LookupOmissionTests(unittest.TestCase):
             "/jh_entitlements(edbb81d1-365b-f111-bec6-000d3a3428b3)",
         )
         self.assertEqual(
-            payload["jh_agentaccountid@odata.bind"],
-            "/accounts(jh_thinkidnbr=123)",
+            payload["jh_name"], "20831552:3"
         )
-        self.assertEqual(payload["jh_name"], "20831552:3")
         self.assertEqual(payload["jh_orderstatus"], 6)
         self.assertEqual(payload["jh_paymentstatus"], 1)
         self.assertEqual(payload["jh_sequence"], 3)

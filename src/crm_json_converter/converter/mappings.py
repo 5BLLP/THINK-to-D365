@@ -110,6 +110,15 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 notes="Deterministically derived GUID from orderhdr_id.",
             ),
             FieldMapping(
+                "agency_customer_id",
+                "Agent Account",
+                "jh_agentaccountid",
+                "string",
+                lookup_bind_entity_set="accounts",
+                lookup_bind_key="jh_thinkidnbr",
+                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
+            ),
+            FieldMapping(
                 None,
                 "Name",
                 "jh_name",
@@ -143,15 +152,6 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
             ),
             FieldMapping(
                 "order_date", "jh_invoicedon", None, "datetime"
-            ),
-            FieldMapping(
-                "agency_customer_id",
-                "Agent Account",
-                "jh_agentaccountid",
-                "string",
-                lookup_bind_entity_set="accounts",
-                lookup_bind_key="jh_thinkidnbr",
-                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
             ),
             FieldMapping(
                 "orderhdr_id",
