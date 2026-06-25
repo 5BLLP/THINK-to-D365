@@ -154,6 +154,13 @@ class D365BatchRunner:
             items = data.get("value", [])
             if table_name in _ACCOUNT_TABLE_NAMES:
                 lookup_values = row.get("lookup_values") or {table_config.match_field: row["match_value"]}
+                print()
+                print("================================")
+                print("TABLE :", table_name)
+                print("LOOKUP VALUES")
+                print(lookup_values)
+                print("================================")
+                print()
                 if len(items) > 1:
                     lookup_display = " and ".join(f"{field_name}={value}" for field_name, value in lookup_values.items())
                     raise ValueError(

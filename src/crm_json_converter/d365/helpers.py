@@ -3,6 +3,7 @@ from __future__ import annotations
 from email.parser import BytesParser
 from email.policy import default
 import re
+from uuid import UUID
 from typing import Any
 
 
@@ -10,12 +11,20 @@ HTTP_STATUS_PATTERN = re.compile(r"HTTP/\d(?:\.\d)?\s+(\d{3})")
 
 
 def build_odata_filter(field_name: str, value: Any) -> str:
+    if isinstance(value, UUID):
+        return f"{field_name} eq {value}"
+    if field_name == "jh_thinkidnbr":
+        text = str(value).strip().replace("'", "''")
+        return f"{field_name} eq '{text}'"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return f"{field_name} eq {value}"
-    if field_name == "jh_thinkidnbr" and isinstance(value, str):
-        text = value.strip()
-        if text.isdigit():
-            return f"{field_name} eq {int(text)}"
+
+    try:
+        UUID(str(value))
+        return f"{field_name} eq {value}"
+    except ValueError:
+        pass
+
     escaped = str(value).replace("'", "''")
     return f"{field_name} eq '{escaped}'"
 

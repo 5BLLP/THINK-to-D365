@@ -15,10 +15,9 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 "customer_id",
                 "MUSE ID",
                 "jh_thinkidnbr",
-                "whole_number",
-                minimum=0,
-                maximum=1000000000,
-                notes="Mapped to D365 Account field jh_thinkidnbr.",
+                "string",
+                max_length=20,
+                notes="Mapped to D365 Account field jh_thinkidnbr as single line text.",
             ),
             FieldMapping("address1", "Address Line 1", "address1_line1", "string", max_length=100),
             FieldMapping("address2", "Address Line 2", "address1_line2", "string", max_length=100),
@@ -52,19 +51,17 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 "ringgold",
                 "Ringgold ID",
                 "jh_ringgoldidnbr",
-                "whole_number",
-                minimum=0,
-                maximum=1_000_000_000,
-                notes="Mapped to D365 Account field jh_ringgoldidnbr.",
+                "string",
+                max_length=20,
+                notes="Mapped to D365 Account field jh_ringgoldidnbr as single line text.",
             ),
             FieldMapping(
                 "ringgold_parent",
                 "Ringgold Parent ID",
                 "jh_ringgoldparentidnbr",
-                "whole_number",
-                minimum=0,
-                maximum=1_000_000_000,
-                notes="Mapped to D365 Account field jh_ringgoldparentidnbr.",
+                "string",
+                max_length=20,
+                notes="Mapped to D365 Account field jh_ringgoldparentidnbr as single line text.",
             ),
         ),
     ),
@@ -76,10 +73,9 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 "agency_customer_id",
                 "MUSE ID",
                 "jh_thinkidnbr",
-                "whole_number",
-                minimum=0,
-                maximum=1000000000,
-                notes="Mapped to D365 Account field jh_thinkidnbr.",
+                "string",
+                max_length=20,
+                notes="Mapped to D365 Account field jh_thinkidnbr as single line text.",
             ),
             FieldMapping("email", "Email", "emailaddress1", "string", max_length=100),
             FieldMapping("agency_bill_to", "Payment remitter", "jh_ispaymentremitter", "boolean"),
@@ -98,50 +94,55 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
             FieldMapping("phone", "Main Phone", "telephone1", "string", max_length=100),
         ),
     ),
-    "payment": TableMapping(
-        source_table="Payment",
+    "entitlement": TableMapping(
+        source_table="Order Items",
         target_entity="jh_entitlement",
         fields=(
             FieldMapping(
-                "customer_id",
-                "Customer",
-                "jh_accountid",
+                "orderhdr_id",
+                "Entitlement ID",
+                "jh_entitlementid",
                 "string",
-                lookup_target="Account",
-                lookup_bind_entity_set="accounts",
-                lookup_bind_key="jh_thinkidnbr",
-                notes="Mapped to D365 entitlement lookup field jh_accountid.",
+                notes="Deterministically derived GUID from orderhdr_id.",
             ),
             FieldMapping(
-                "orderhdr_id",
-                "Order ID",
-                "jh_orderid",
+                "agency_customer_id",
+                "Agent Account",
+                "jh_agentaccountid",
                 "string",
-                max_length=20,
-                notes="Mapped to D365 entitlement text field jh_orderid (single line of text, 20 characters).",
+                lookup_bind_entity_set="accounts",
+                lookup_bind_key="jh_thinkidnbr",
+                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
+            ),
+            FieldMapping(
+                "customer_id",
+                "Account",
+                "jh_accountid",
+                "string",
+                lookup_bind_entity_set="accounts",
+                lookup_bind_key="jh_thinkidnbr",
+                notes="Lookup bound to D365 account key field jh_thinkidnbr.",
             ),
             FieldMapping(
                 None,
                 "Name",
                 "jh_name",
                 "string",
-                max_length=100,
-                notes="Computed from orderhdr_id and order_item_seq as orderhdr_id:order_item_seq.",
+                max_length=20,
+                notes="Copied from orderhdr_id for the entitlement name field.",
             ),
-            FieldMapping(
-                "order_item_seq",
-                "Sequence",
-                "jh_sequence",
-                "whole_number",
-                minimum=0,
-                notes="Mapped to D365 entitlement sequence field jh_sequence.",
-            ),
-            FieldMapping("payment_amount", "Paid Amount", "jh_paidamt", "currency", notes="Mapped to D365 entitlement currency field jh_paidamt."),
-            FieldMapping("payment_date", "Last Payment", "jh_lastpaymenton", "datetime", notes="Mapped to D365 entitlement datetime field jh_lastpaymenton."),
+            FieldMapping("start_date", "Start Date", "jh_starton", "datetime", notes="Mapped to D365 entitlement start datetime field jh_starton."),
+            FieldMapping("expire_date", "End Date", "jh_endon", "datetime", notes="Mapped to D365 entitlement end datetime field jh_endon."),
         ),
     ),
-    "payment_item": TableMapping(
-        source_table="Payment Item",
+    "payment": TableMapping(
+        source_table="Payment",
+        target_entity="jh_entitlement",
+        fields=(),
+        d365_enabled=False,
+    ),
+    "order_item": TableMapping(
+        source_table="Order Item",
         target_entity="jh_entitlementitems",
         d365_enabled=True,
         fields=(
@@ -155,14 +156,19 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
                 notes="Lookup bound to D365 collection title field jh_name.",
             ),
             FieldMapping(
+                "order_date", "jh_invoicedon", None, "datetime"
+            ),
+            FieldMapping(
                 "orderhdr_id",
                 "Entitlement",
                 "jh_entitlementid",
                 "string",
                 lookup_bind_entity_set="jh_entitlements",
-                lookup_bind_key="jh_orderid",
-                notes="Lookup bound to D365 entitlement text field jh_orderid.",
+                lookup_bind_key="jh_entitlementid",
+                notes="Lookup bound to D365 entitlement unique identifier field jh_entitlementid.",
             ),
+            FieldMapping("start_date", "Start Date", None, "datetime", notes="Used to create the parent entitlement record."),
+            FieldMapping("expire_date", "End Date", None, "datetime", notes="Used to create the parent entitlement record."),
             FieldMapping(
                 None,
                 "Name",
@@ -229,7 +235,10 @@ TABLE_MAPPINGS: dict[str, TableMapping] = {
 
 
 def normalize_table_name(table_name: str) -> str:
-    return table_name.strip().lower().replace(" ", "_")
+    normalized = table_name.strip().lower().replace(" ", "_")
+    if normalized == "payment_item":
+        return "order_item"
+    return normalized
 
 
 def get_supported_tables() -> list[str]:

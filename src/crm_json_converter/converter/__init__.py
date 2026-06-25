@@ -11,7 +11,7 @@ from .mappings import (
     normalize_table_name,
 )
 from .models import FieldMapping, TableMapping
-from .payload import build_d365_payload, build_payment_name
+from .payload import build_d365_payload, build_entitlement_guid, build_entitlement_id, build_payment_name
 from .sanitize import (
     sanitize_datetime,
     sanitize_guid,

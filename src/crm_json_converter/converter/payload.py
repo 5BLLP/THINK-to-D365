@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from uuid import UUID, uuid5
 from typing import Any
 
 from .mappings import get_table_mapping
@@ -9,35 +10,58 @@ def _build_lookup_bind_path(entity_set: str, key_name: str, key_value: Any) -> s
     if isinstance(key_value, bool):
         text = str(key_value).lower()
         return f"/{entity_set}({key_name}={text})"
+    if key_name == "jh_thinkidnbr":
+        text = str(key_value).strip().replace("'", "''")
+        return f"/{entity_set}({key_name}='{text}')"
     if isinstance(key_value, (int, float)):
         return f"/{entity_set}({key_name}={key_value})"
-    if key_name == "jh_thinkidnbr":
-        text = str(key_value).strip()
-        if text.isdigit():
-            return f"/{entity_set}({key_name}={int(text)})"
     text = str(key_value).replace("'", "''")
-    return f"/{entity_set}({key_name}='{text}')"
+    return f"/{entity_set}({key_name}='{text}')"  
 
 
 def _build_entity_bind_path(entity_set: str, record_id: Any) -> str:
     return f"/{entity_set}({record_id})"
 
 
+def build_entitlement_guid(sanitized_record: dict[str, Any]) -> UUID:
+    order_id = str(sanitized_record.get("orderhdr_id") or "").strip()
+    if not order_id:
+        raise ValueError("entitlement requires orderhdr_id to build jh_entitlementid")
+    try:
+        return UUID(order_id)
+    except (TypeError, ValueError):
+        return uuid5(UUID("12345678-1234-5678-1234-567812345678"), f"jh_entitlementid:{order_id}")
+
+
+def build_entitlement_id(sanitized_record: dict[str, Any]) -> str:
+    return str(build_entitlement_guid(sanitized_record))
+
+
 def build_payment_name(sanitized_record: dict[str, Any]) -> str:
     order_id = str(sanitized_record.get("orderhdr_id") or "").strip()
     sequence = str(sanitized_record.get("order_item_seq") or "").strip()
     if not order_id or not sequence:
-        raise ValueError("payment requires both orderhdr_id and order_item_seq to build jh_name")
+        raise ValueError("order_item requires both orderhdr_id and order_item_seq to build jh_name")
     value = f"{order_id}:{sequence}"
     if len(value) > 100:
-        raise ValueError(f"payment jh_name '{value}' exceeds 100 characters")
+        raise ValueError(f"order_item jh_name '{value}' exceeds 100 characters")
     return value
+
+
+def build_entitlement_name(sanitized_record: dict[str, Any]) -> str:
+    order_id = str(sanitized_record.get("orderhdr_id") or "").strip()
+    if not order_id:
+        raise ValueError("entitlement requires orderhdr_id to build jh_name")
+    if len(order_id) > 20:
+        return order_id[:20]
+    return order_id
 
 
 def _normalize_payment_item_name(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     return " ".join(value.split())
+
 
 def build_d365_payload(
     table_name: str,
@@ -62,11 +86,17 @@ def build_d365_payload(
             continue
         if table_name == "agency" and field.source_column in {"fname", "initial_name", "lname", "suffix"}:
             continue
-        if table_name == "payment_item" and field.source_column in {"fname", "lname"}:
+        if table_name in {"order_item", "payment_item"} and field.source_column in {"fname", "lname"}:
             continue
-        if table_name == "payment_item" and field.source_column == "company":
+        if table_name in {"order_item", "payment_item"} and field.source_column == "company":
             continue
-        if table_name in {"payment", "payment_item"} and field.crm_schema_name == "jh_name":
+        if table_name == "entitlement" and field.crm_schema_name == "jh_entitlementid":
+            payload[field.crm_schema_name] = build_entitlement_id(sanitized_record)
+            continue
+        if table_name == "entitlement" and field.crm_schema_name == "jh_name":
+            payload[field.crm_schema_name] = build_entitlement_name(sanitized_record)
+            continue
+        if table_name in {"payment", "order_item", "payment_item"} and field.crm_schema_name == "jh_name":
             payload[field.crm_schema_name] = build_payment_name(sanitized_record)
             continue
         if field.source_column not in sanitized_record:
@@ -74,13 +104,26 @@ def build_d365_payload(
         value = sanitized_record[field.source_column]
         if value is None:
             continue
-        if table_name == "payment_item" and field.crm_schema_name == "jh_entitlementid":
+        if table_name in {"order_item", "payment_item"} and field.crm_schema_name == "jh_entitlementid":
             entitlement_record_id = sanitized_record.get("_jh_entitlement_record_id")
             if entitlement_record_id in {None, ""}:
-                raise ValueError("payment_item requires a resolved entitlement record id before payload build")
+                raise ValueError("order_item requires a resolved entitlement record id before payload build")
             payload[f"{field.crm_schema_name}@odata.bind"] = _build_entity_bind_path(
                 field.lookup_bind_entity_set or "jh_entitlements",
                 entitlement_record_id,
+            )
+            continue
+        if table_name == "entitlement" and field.crm_schema_name in {"jh_agentaccountid", "jh_accountid"}:
+            record_id_key = {
+                "jh_agentaccountid": "_jh_agentaccount_record_id",
+                "jh_accountid": "_jh_account_record_id",
+            }[field.crm_schema_name]
+            account_record_id = sanitized_record.get(record_id_key)
+            if account_record_id in {None, ""}:
+                raise ValueError(f"entitlement requires a resolved account record id before payload build for {field.crm_schema_name}")
+            payload[f"{field.crm_schema_name}@odata.bind"] = _build_entity_bind_path(
+                field.lookup_bind_entity_set or "accounts",
+                account_record_id,
             )
             continue
         if field.crm_schema_name=="jh_countryid":
@@ -112,11 +155,11 @@ def build_d365_payload(
 
             payload[f"{field.crm_schema_name}@odata.bind"] = bind_path
             continue
-        if table_name == "payment_item" and field.crm_schema_name == "jh_name":
+        if table_name in {"order_item", "payment_item"} and field.crm_schema_name == "jh_name":
             value = _normalize_payment_item_name(value)
         payload[field.crm_schema_name] = value
 
-    if table_name in {"payment", "payment_item"}:
+    if table_name in {"payment", "order_item", "payment_item"}:
         order_item_seq = sanitized_record.get("order_item_seq")
         if order_item_seq not in {None, ""}:
             payload["jh_sequence"] = order_item_seq

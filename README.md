@@ -4,21 +4,25 @@ Transform source CRM JSON into Dynamics 365 payloads, write the mapped output, a
 
 ## Architecture
 
-This project supports four source tables and turns source CRM JSON into D365-ready payloads.
+This project supports five source tables and turns source CRM JSON into D365-ready payloads.
 
 | Source table | D365 target | Notes |
 |---|---|---|
 | `customer` | `Account` | Maps customer records into D365 accounts, including addresses, contact details, and ringgold fields. `jh_thinkidnbr` is the account key. |
 | `agency` | `Account` | Maps agency records into D365 accounts, including commission fields and contact lookup behavior. `jh_thinkidnbr` is the account key. |
-| `payment` | `jh_entitlement` | Maps payment records into entitlements. `jh_name` is computed from `orderhdr_id:order_item_seq`. |
-| `payment_item` | `jh_entitlementitems` | Maps payment item records into entitlement items. The parent entitlement is resolved from `orderhdr_id`; `jh_name` is computed from the composite `orderhdr_id:order_item_seq`; `order_status` / `payment_status` are numeric choice fields. |
+| `entitlement` | `jh_entitlement` | Maps order-item entitlement fields into D365 entitlements. `jh_entitlementid` comes from `orderhdr_id`; `agency_customer_id` binds to `jh_agentaccountid`; `customer_id` binds to `jh_accountid`; `jh_name` also comes from `orderhdr_id`; `jh_starton` / `jh_endon` come from `start_date` / `expire_date`. |
+| `payment` | `jh_entitlement` | Reserved for future use. The mapper is currently disabled. |
+| `order_item` | `jh_entitlementitems` | Maps order item records into entitlement items. The parent entitlement is resolved from `orderhdr_id`; `jh_name` is computed from the composite `orderhdr_id:order_item_seq`; `order_status` / `payment_status` are numeric choice fields; `jh_sequence` comes from `order_item_seq`. |
 
 Note:
 
 - `jh_thinkidnbr` is the key used for customer and agency account matching.
 - The current mapper does not emit `jh_museid` for customer or agency records.
-- `orderhdr_id:order_item_seq` is the composite key used to build `jh_name` for `payment` and `payment_item`.
-- For `payment_item`, that composite value is also used when deduping source rows before lookup and write.
+- `orderhdr_id` is the entitlement key used to build `jh_entitlementid` and `jh_name` for `entitlement`.
+- `orderhdr_id:order_item_seq` is the composite key used to build `jh_name` for `order_item`.
+- `agency_customer_id` on `entitlement` binds to `jh_agentaccountid` using the account key `jh_thinkidnbr`.
+- `customer_id` on `entitlement` binds to `jh_accountid` using the account key `jh_thinkidnbr`.
+- For `order_item`, that composite value is also used when deduping source rows before lookup and write.
 
 ## Developer Workflow
 
@@ -60,9 +64,9 @@ D365_PAYMENT_ENTITY_SET=...
 D365_PAYMENT_MATCH_FIELD=...
 D365_PAYMENT_PRIMARY_ID_FIELD=...
 
-D365_PAYMENT_ITEM_ENTITY_SET=...
-D365_PAYMENT_ITEM_MATCH_FIELD=...
-D365_PAYMENT_ITEM_PRIMARY_ID_FIELD=...
+D365_ORDER_ITEM_ENTITY_SET=...
+D365_ORDER_ITEM_MATCH_FIELD=...
+D365_ORDER_ITEM_PRIMARY_ID_FIELD=...
 ```
 
 Optional batch and logging settings:
@@ -111,7 +115,13 @@ python transform.py --list-tables --pretty
 Describe a table:
 
 ```bash
-python transform.py --table payment_item --describe --pretty
+python transform.py --table entitlement --describe --pretty
+```
+
+Describe a table:
+
+```bash
+python transform.py --table order_item --describe --pretty
 ```
 
 Transform only:
@@ -129,13 +139,13 @@ python transform.py --table customer --input samples/customer.json --output outp
 Transform and push to D365:
 
 ```bash
-python transform.py --table payment_item --input samples/payment_items.json --push-d365 --pretty
+python transform.py --table order_item --input samples/payment_items.json --push-d365 --pretty
 ```
 
 Push with HTTP debugging:
 
 ```bash
-python transform.py --table payment_item --input samples/payment_items.json --push-d365 --debug-http --pretty
+python transform.py --table order_item --input samples/payment_items.json --push-d365 --debug-http --pretty
 ```
 
 Before pushing, place real source files in `samples/` and point `--input` at those files. The repository keeps `samples/` available for local data, but the actual input files are intentionally ignored by git.
@@ -145,8 +155,10 @@ Before pushing, place real source files in `samples/` and point `--input` at tho
 - Sanitization happens before the D365 push.
 - The mapped JSON output is always written, even when `--push-d365` is used.
 - Batch mode processes lookups and writes in chunks.
-- `payment_item` dedupes source rows before lookup/write using `orderhdr_id` and `order_item_seq`.
-- `payment_item` writes a computed `jh_name` value and a numeric `jh_sequence`.
+- `entitlement` dedupes source rows before lookup/write using `orderhdr_id`.
+- `order_item` first writes or updates entitlements, then writes entitlement items.
+- `order_item` dedupes source rows before lookup/write using `orderhdr_id` and `order_item_seq`.
+- `order_item` writes a computed `jh_name` value and a numeric `jh_sequence`.
 - Duplicate source rows are skipped during batch processing.
 - If a D365 lookup or write fails, the run logs the failure and keeps going where possible.
 
