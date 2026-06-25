@@ -315,6 +315,107 @@ class D365BatchRetryTests(unittest.TestCase):
         )
         self.assertNotIn(1, [row["record_index"] for row in client.batch.write_rows])  # type: ignore[attr-defined]
 
+    def test_account_rowwise_patch_omits_customertypecode(self) -> None:
+        client = D365Client.__new__(D365Client)
+        client._current_import_id = lambda: "T20260529"  # type: ignore[attr-defined]
+        client._merge_import_id = lambda existing_import_id: "T20260529"  # type: ignore[attr-defined]
+        client.logger = _CollectorLogger()  # type: ignore[attr-defined]
+        captured_payloads: list[dict[str, object]] = []
+        client._find_existing_record_compat = lambda *args, **kwargs: ("abc", "T20260528")  # type: ignore[attr-defined]
+        client._patch_record = (  # type: ignore[attr-defined]
+            lambda table_name, record_index, entity_set, record_id, payload: captured_payloads.append(payload)
+        )
+        client._post_record = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("post should not be called"))  # type: ignore[attr-defined]
+
+        table_config = D365TableConfig(
+            entity_set="accounts",
+            match_field="jh_thinkidnbr",
+            primary_id_field="accountid",
+        )
+
+        operation, lookup_display = client._upsert_account_lookup_driven_row(  # type: ignore[attr-defined]
+            table_name="customer",
+            table_config=table_config,
+            record_index=1,
+            record={"customer_id": 1001, "company": "First"},
+            current_import_id="T20260529",
+        )
+
+        self.assertEqual(operation, "PATCH")
+        self.assertEqual(lookup_display, "jh_thinkidnbr=1001")
+        self.assertEqual(len(captured_payloads), 1)
+        self.assertNotIn("customertypecode", captured_payloads[0])
+        self.assertEqual(captured_payloads[0]["jh_thinkidnbr"], 1001)
+
+    def test_account_batch_patch_omits_customertypecode(self) -> None:
+        class _Batch:
+            def __init__(self) -> None:
+                self.write_rows: list[dict[str, object]] = []
+
+            def lookup_existing_ids(self, *, table_name, table_config, chunk):  # noqa: ANN001, ANN201
+                return {row["record_index"]: {"record_id": "abc", "import_id": "T20260528"} for row in chunk}
+
+            def split_for_write(self, rows):  # noqa: ANN001, ANN201
+                return [rows]
+
+            def run_chunks(self, chunks, fn):  # noqa: ANN001, ANN201
+                return [fn(chunk) for chunk in chunks]
+
+            def execute_write_chunk(self, *, table_name, table_config, chunk):  # noqa: ANN001, ANN201
+                self.write_rows.extend(chunk)
+                return [
+                    {
+                        "record_index": row["record_index"],
+                        "operation": row["operation"],
+                        "match_value": row.get("lookup_display"),
+                        "lookup_display": row.get("lookup_display"),
+                        "outcome": "success",
+                    }
+                    for row in chunk
+                ]
+
+        client = D365Client.__new__(D365Client)
+        client.batch = _Batch()  # type: ignore[attr-defined]
+        client.logger = _CollectorLogger()  # type: ignore[attr-defined]
+        client.config = D365Config(  # type: ignore[attr-defined]
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            resource_url="https://example.test",
+            tables={
+                "customer": D365TableConfig(
+                    entity_set="accounts",
+                    match_field="customer_id",
+                    primary_id_field="accountid",
+                ),
+            },
+            batch=D365BatchConfig(
+                enabled=True,
+                parallel=False,
+                batch_size=50,
+                max_workers=1,
+                retry_attempts=3,
+            ),
+            logging=D365LogConfig(log_path=None, log_dir="logs"),
+        )  # type: ignore[attr-defined]
+        client._current_import_id = lambda: "T20260529"  # type: ignore[attr-defined]
+        client._merge_import_id = lambda existing_import_id: "T20260529"  # type: ignore[attr-defined]
+        client._batch_flow_chunk_size = lambda: 1  # type: ignore[attr-defined]
+
+        table_config = type(
+            "TableConfig",
+            (object,),
+            {"entity_set": "accounts", "match_field": "jh_thinkidnbr", "primary_id_field": "accountid"},
+        )()
+        records = [{"customer_id": 1001, "company": "First"}]
+
+        logs = client._upsert_table_records_batch("customer", table_config, records)
+
+        self.assertEqual(logs, ["[crm-json-transform] record 1: PATCH accounts by jh_thinkidnbr=1001"])
+        self.assertEqual(len(client.batch.write_rows), 1)  # type: ignore[attr-defined]
+        self.assertNotIn("customertypecode", client.batch.write_rows[0]["payload"])  # type: ignore[attr-defined]
+        self.assertEqual(client.batch.write_rows[0]["payload"]["jh_thinkidnbr"], 1001)  # type: ignore[attr-defined]
+
     def test_payment_item_batch_upsert_dedupes_by_composite_lookup_key(self) -> None:
         class _Batch:
             def __init__(self) -> None:

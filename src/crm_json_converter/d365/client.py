@@ -177,6 +177,15 @@ class D365Client:
     def _is_order_item_table(self, table_name: str) -> bool:
         return table_name in {"order_item", "payment_item"}
 
+    def _strip_account_patch_fields(self, table_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._is_account_table(table_name):
+            return payload
+        if "customertypecode" not in payload:
+            return payload
+        cleaned_payload = dict(payload)
+        cleaned_payload.pop("customertypecode", None)
+        return cleaned_payload
+
     def _log_record_upsert(
         self,
         *,
@@ -683,6 +692,7 @@ class D365Client:
         import_id = self._merge_import_id(existing_import_id) if existing_id else current_import_id
         payload = build_d365_payload(table_name, payload_record, import_id=import_id)
         if existing_id:
+            payload = self._strip_account_patch_fields(table_name, payload)
             self._patch_record(table_name, record_index, table_config.entity_set, existing_id, payload)
             operation = "PATCH"
         else:
@@ -745,6 +755,7 @@ class D365Client:
         import_id = self._merge_import_id(existing_import_id) if existing_id else current_import_id
         payload = build_d365_payload(table_name, record, import_id=import_id)
         if existing_id:
+            payload = self._strip_account_patch_fields(table_name, payload)
             try:
                 self._patch_record(table_name, record_index, table_config.entity_set, existing_id, payload)
                 operation = "PATCH"
@@ -804,6 +815,8 @@ class D365Client:
             )
             payload_record = row.get("payload_record", record)
             payload = build_d365_payload(table_name, payload_record, import_id=import_id)
+            if record_id:
+                payload = self._strip_account_patch_fields(table_name, payload)
             write_rows.append(
                 {
                     "record_index": record_index,
@@ -1224,6 +1237,7 @@ class D365Client:
                 payload_record,
                 import_id=self._merge_import_id(existing_import_id),
             )
+            payload = self._strip_account_patch_fields(table_name, payload)
             self._patch_record(table_name, record_index, table_config.entity_set, existing_id, payload)
             return "PATCH", payload
         payload = build_d365_payload(table_name, payload_record, import_id=current_import_id)
